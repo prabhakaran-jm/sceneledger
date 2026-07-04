@@ -224,3 +224,7 @@ apps/web/node_modules/
 apps/web/.next/
 node_modules/
 .cursor/
+.claude/
+
+# Un-ignore frontend lib (Python "lib/" pattern above must not swallow apps/web/lib)
+!apps/web/lib/

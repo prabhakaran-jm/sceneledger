@@ -31,6 +31,11 @@ class GeneratedSceneAssets:
     assets: list[GeneratedAsset] = field(default_factory=list)
     genblaze_run_id: str | None = None
     placeholder: bool = True
+    # Genblaze provenance manifest — the SDK's canonical JSON bytes, stored
+    # verbatim (never rewritten) so the SDK's own hash verification round-trips.
+    genblaze_manifest_json: bytes | None = None
+    genblaze_provider: str | None = None
+    genblaze_model: str | None = None
 
 
 class SceneMediaGenerator(Protocol):

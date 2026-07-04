@@ -496,6 +496,7 @@ export default function ProjectPage() {
       <GenblazePanel
         mediaMode={mediaMode}
         hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
+        provenance={manifest?.genblaze_provenance ?? null}
       />
 
       <div className="card">
