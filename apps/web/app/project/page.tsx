@@ -206,7 +206,11 @@ export default function ProjectPage() {
       setScenes(result.scenes);
       setManifest(null);
       setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
-      setMessage("Generated 3-scene plan.");
+      const plannerNote =
+        result.planner === "genblaze-chat"
+          ? `planned by Genblaze chat${result.genblaze_planner_model ? ` · ${result.genblaze_planner_model}` : ""}`
+          : `deterministic planner${result.planner_fallback_reason ? ` — ${result.planner_fallback_reason}` : ""}`;
+      setMessage(`Generated 3-scene plan (${plannerNote}).`);
     }
   }
 
@@ -542,6 +546,7 @@ export default function ProjectPage() {
           mediaMode={mediaMode}
           hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
           provenance={manifest?.genblaze_provenance ?? null}
+          plannerProvenance={manifest?.planner_provenance ?? null}
         />
 
         <div className="card">

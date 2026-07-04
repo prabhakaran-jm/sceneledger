@@ -59,6 +59,9 @@ class ReleaseSceneRecord(BaseModel):
     genblaze_manifest_key: str | None = None
     genblaze_manifest_sha256: str | None = None
     genblaze_manifest_verified: bool | None = None
+    genblaze_tts_manifest_key: str | None = None
+    genblaze_tts_manifest_sha256: str | None = None
+    genblaze_tts_manifest_verified: bool | None = None
     verification_errors: list[str] = Field(default_factory=list)
 
 
@@ -74,6 +77,17 @@ class GenblazeProvenance(BaseModel):
     manifest_keys: list[str] = Field(default_factory=list)
     manifest_hashes: list[str] = Field(default_factory=list)
     asset_count: int = 0
+
+
+class PlannerProvenance(BaseModel):
+    planner: str = "deterministic"
+    fallback_reason: str | None = None
+    genblaze_manifest_key: str | None = None
+    genblaze_manifest_sha256: str | None = None
+    genblaze_manifest_verified: bool | None = None
+    genblaze_run_id: str | None = None
+    genblaze_model: str | None = None
+    verification_errors: list[str] = Field(default_factory=list)
 
 
 class ReleaseVerification(BaseModel):
@@ -95,6 +109,7 @@ class ReleaseManifestResponse(BaseModel):
     storage_backend: str
     media_mode_summary: MediaModeSummary
     genblaze_provenance: GenblazeProvenance
+    planner_provenance: PlannerProvenance = Field(default_factory=PlannerProvenance)
     source: ReleaseSourceSection
     scenes: list[ReleaseSceneRecord]
     stale_scene_ids: list[str] = Field(default_factory=list)

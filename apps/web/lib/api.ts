@@ -62,6 +62,20 @@ export type ReleaseSceneRecord = {
   genblaze_manifest_key?: string | null;
   genblaze_manifest_sha256?: string | null;
   genblaze_manifest_verified?: boolean | null;
+  genblaze_tts_manifest_key?: string | null;
+  genblaze_tts_manifest_sha256?: string | null;
+  genblaze_tts_manifest_verified?: boolean | null;
+  verification_errors: string[];
+};
+
+export type PlannerProvenance = {
+  planner: string;
+  fallback_reason?: string | null;
+  genblaze_manifest_key?: string | null;
+  genblaze_manifest_sha256?: string | null;
+  genblaze_manifest_verified?: boolean | null;
+  genblaze_run_id?: string | null;
+  genblaze_model?: string | null;
   verification_errors: string[];
 };
 
@@ -85,6 +99,7 @@ export type ReleaseManifest = {
     manifest_hashes: string[];
     asset_count: number;
   };
+  planner_provenance?: PlannerProvenance | null;
   source: {
     version: string;
     chunk_count: number;
@@ -246,6 +261,12 @@ export function generatePlan(projectId: string, sourceVersion: string) {
     source_version: string;
     scenes: Scene[];
     storage_keys: string[];
+    planner: string;
+    planner_fallback_reason?: string | null;
+    genblaze_planner_manifest_key?: string | null;
+    genblaze_planner_manifest_sha256?: string | null;
+    genblaze_planner_run_id?: string | null;
+    genblaze_planner_model?: string | null;
   }>(`/projects/${projectId}/plan`, {
     method: "POST",
     body: JSON.stringify({ source_version: sourceVersion }),

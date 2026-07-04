@@ -15,6 +15,7 @@ from release_models import (
     RELEASE_MESSAGE_WARNING,
     GenblazeProvenance,
     MediaModeSummary,
+    PlannerProvenance,
     ReleaseManifestResponse,
     ReleaseSceneAssets,
     ReleaseSceneRecord,
@@ -150,7 +151,7 @@ def _verify_scene_media(
     project_id: str,
     source_version: str,
     scene: Scene,
-) -> tuple[ReleaseSceneRecord, list[str], bool, set[str], str | None]:
+) -> tuple[ReleaseSceneRecord, list[str], bool, set[str], list[str | None]]:
     errors: list[str] = []
     manifest_logical = scene_manifest_key(project_id, source_version, scene.scene_id)
     manifest_public = storage.public_key(manifest_logical)
@@ -179,7 +180,7 @@ def _verify_scene_media(
             errors,
             False,
             generators,
-            None,
+            [],
         )
 
     manifest = storage.read_json(manifest_logical)
@@ -201,7 +202,7 @@ def _verify_scene_media(
             errors,
             False,
             generators,
-            manifest.get("genblaze_run_id"),
+            [manifest.get("genblaze_run_id")],
         )
 
     genblaze_run_id = manifest.get("genblaze_run_id")
@@ -214,6 +215,20 @@ def _verify_scene_media(
         )
         errors.extend(gb_errors)
         if not genblaze_manifest_verified:
+            all_hashes_ok = False
+
+    genblaze_tts_manifest_key = manifest.get("genblaze_tts_manifest_key")
+    genblaze_tts_manifest_sha256 = manifest.get("genblaze_tts_manifest_sha256")
+    genblaze_tts_manifest_verified: bool | None = None
+    if genblaze_tts_manifest_key:
+        genblaze_tts_manifest_verified, tts_errors = _verify_genblaze_manifest(
+            storage,
+            f"{scene.scene_id} (TTS)",
+            genblaze_tts_manifest_key,
+            genblaze_tts_manifest_sha256,
+        )
+        errors.extend(tts_errors)
+        if not genblaze_tts_manifest_verified:
             all_hashes_ok = False
 
     raw_assets = manifest.get("assets", {})
@@ -252,13 +267,55 @@ def _verify_scene_media(
             genblaze_manifest_key=genblaze_manifest_key,
             genblaze_manifest_sha256=genblaze_manifest_sha256,
             genblaze_manifest_verified=genblaze_manifest_verified,
+            genblaze_tts_manifest_key=genblaze_tts_manifest_key,
+            genblaze_tts_manifest_sha256=genblaze_tts_manifest_sha256,
+            genblaze_tts_manifest_verified=genblaze_tts_manifest_verified,
             verification_errors=errors,
         ),
         errors,
         all_hashes_ok and media_status == "complete",
         generators,
-        genblaze_run_id,
+        [genblaze_run_id, manifest.get("genblaze_tts_run_id")],
     )
+
+
+def _verify_planner_provenance(
+    storage: StorageBackend, project_id: str, source_version: str
+) -> PlannerProvenance:
+    """Load planner metadata from the stored plan and verify its Genblaze manifest.
+
+    Plans without a claimed Genblaze planner manifest need no verification;
+    a claimed-but-missing/corrupt/failed manifest blocks the release via
+    verification_errors (caller folds them into hash_verified).
+    """
+    plan_key = project_key(project_id, "plans", source_version, "scenes.json")
+    if not storage.exists(plan_key):
+        return PlannerProvenance()
+    plan = storage.read_json(plan_key)
+
+    provenance = PlannerProvenance(
+        planner=plan.get("planner", "deterministic"),
+        fallback_reason=plan.get("planner_fallback_reason"),
+    )
+    genblaze_planner = plan.get("genblaze_planner")
+    if not genblaze_planner:
+        return provenance
+
+    provenance.genblaze_manifest_key = genblaze_planner.get("manifest_key")
+    provenance.genblaze_manifest_sha256 = genblaze_planner.get("manifest_sha256")
+    provenance.genblaze_run_id = genblaze_planner.get("run_id")
+    provenance.genblaze_model = genblaze_planner.get("model")
+
+    if provenance.genblaze_manifest_key:
+        verified, errors = _verify_genblaze_manifest(
+            storage,
+            "scene planner",
+            provenance.genblaze_manifest_key,
+            provenance.genblaze_manifest_sha256,
+        )
+        provenance.genblaze_manifest_verified = verified
+        provenance.verification_errors = errors
+    return provenance
 
 
 def _resolve_scenes(
@@ -305,6 +362,10 @@ def _build_genblaze_provenance(
             manifest_keys.append(scene.genblaze_manifest_key)
             if scene.genblaze_manifest_sha256:
                 manifest_hashes.append(scene.genblaze_manifest_sha256)
+        if scene.genblaze_tts_manifest_key:
+            manifest_keys.append(scene.genblaze_tts_manifest_key)
+            if scene.genblaze_tts_manifest_sha256:
+                manifest_hashes.append(scene.genblaze_tts_manifest_sha256)
     deduped = sorted({run_id for run_id in run_ids if run_id})
     return GenblazeProvenance(
         present=asset_count > 0 or bool(manifest_keys),
@@ -363,7 +424,7 @@ def build_release_evidence(
     genblaze_run_ids: list[str | None] = []
 
     for scene in scenes_for_release:
-        record, scene_errors, scene_ok, _generators, run_id = _verify_scene_media(
+        record, scene_errors, scene_ok, _generators, run_ids = _verify_scene_media(
             storage, project_id, source_version, scene
         )
         record.source_chunk_hashes = {
@@ -372,7 +433,7 @@ def build_release_evidence(
         }
         scene_records.append(record)
         all_errors.extend(scene_errors)
-        genblaze_run_ids.append(run_id)
+        genblaze_run_ids.extend(run_ids)
         if record.media_status == "missing":
             media_complete = False
             missing_media.append(scene.scene_id)
@@ -381,6 +442,13 @@ def build_release_evidence(
             invalid_asset_scenes.append(scene.scene_id)
         if not scene_ok:
             all_hashes_ok = False
+
+    planner_provenance = _verify_planner_provenance(
+        storage, project_id, source_version
+    )
+    if planner_provenance.genblaze_manifest_verified is False:
+        all_hashes_ok = False
+        all_errors.extend(planner_provenance.verification_errors)
 
     stale_scene_ids = [
         scene.scene_id for scene in scenes_for_release if scene.status == "stale"
@@ -391,7 +459,20 @@ def build_release_evidence(
         media_complete=media_complete,
         stale_scene_ids=stale_scene_ids,
     )
+    if planner_provenance.genblaze_run_id:
+        genblaze_run_ids.append(planner_provenance.genblaze_run_id)
     genblaze_provenance = _build_genblaze_provenance(scene_records, genblaze_run_ids)
+    if planner_provenance.genblaze_manifest_key:
+        genblaze_provenance.manifest_keys = sorted(
+            genblaze_provenance.manifest_keys
+            + [planner_provenance.genblaze_manifest_key]
+        )
+        if planner_provenance.genblaze_manifest_sha256:
+            genblaze_provenance.manifest_hashes = sorted(
+                genblaze_provenance.manifest_hashes
+                + [planner_provenance.genblaze_manifest_sha256]
+            )
+        genblaze_provenance.present = True
     verification = ReleaseVerification(
         source_chunks_present=True,
         scene_plan_present=True,
@@ -414,6 +495,7 @@ def build_release_evidence(
         storage_backend=storage.backend_name,
         media_mode_summary=_build_media_mode_summary(scene_records),
         genblaze_provenance=genblaze_provenance,
+        planner_provenance=planner_provenance,
         source=ReleaseSourceSection(
             version=source_version,
             chunk_count=len(chunks),
@@ -469,11 +551,14 @@ def verify_stored_release(
         message=refreshed.message,
         hash_verified=refreshed.hash_verified,
         verification=refreshed.verification,
-        errors=[
-            error
-            for scene in refreshed.scenes
-            for error in scene.verification_errors
-        ],
+        errors=(
+            list(refreshed.planner_provenance.verification_errors)
+            + [
+                error
+                for scene in refreshed.scenes
+                for error in scene.verification_errors
+            ]
+        ),
     )
 
     updated_manifest: ReleaseManifestResponse | None = None

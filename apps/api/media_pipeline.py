@@ -65,6 +65,20 @@ def genblaze_manifest_key(
     )
 
 
+def genblaze_tts_manifest_key(
+    project_id: str, source_version: str, scene_id: str
+) -> str:
+    return project_key(
+        project_id, "genblaze", source_version, scene_id, "tts-manifest.json"
+    )
+
+
+def genblaze_planner_manifest_key(project_id: str, source_version: str) -> str:
+    return project_key(
+        project_id, "genblaze", source_version, "planner", "manifest.json"
+    )
+
+
 def _get_adapter():
     mode = get_media_mode()
     if mode == "placeholder":
@@ -95,6 +109,11 @@ def _build_manifest_payload(
     genblaze_manifest_sha256: str | None = None,
     genblaze_provider: str | None = None,
     genblaze_model: str | None = None,
+    genblaze_tts_manifest_public_key: str | None = None,
+    genblaze_tts_manifest_sha256: str | None = None,
+    genblaze_tts_run_id: str | None = None,
+    genblaze_tts_model: str | None = None,
+    genblaze_tts_voice: str | None = None,
 ) -> dict:
     return {
         "status": "complete",
@@ -105,6 +124,11 @@ def _build_manifest_payload(
         "genblaze_manifest_sha256": genblaze_manifest_sha256,
         "genblaze_provider": genblaze_provider,
         "genblaze_model": genblaze_model,
+        "genblaze_tts_manifest_key": genblaze_tts_manifest_public_key,
+        "genblaze_tts_manifest_sha256": genblaze_tts_manifest_sha256,
+        "genblaze_tts_run_id": genblaze_tts_run_id,
+        "genblaze_tts_model": genblaze_tts_model,
+        "genblaze_tts_voice": genblaze_tts_voice,
         "assets": {
             role: entry.model_dump(mode="json")
             for role, entry in written_assets.items()
@@ -189,6 +213,22 @@ def _write_scene_media(
         genblaze_manifest_sha256 = sha256_hex(generated.genblaze_manifest_json)
         storage_keys.append(genblaze_manifest_public)
 
+    genblaze_tts_manifest_public: str | None = None
+    genblaze_tts_manifest_sha256: str | None = None
+    if generated.genblaze_tts_manifest_json:
+        tts_logical = genblaze_tts_manifest_key(
+            project_id, source_version, scene.scene_id
+        )
+        genblaze_tts_manifest_public = storage.write_bytes(
+            tts_logical,
+            generated.genblaze_tts_manifest_json,
+            content_type="application/json",
+        )
+        genblaze_tts_manifest_sha256 = sha256_hex(
+            generated.genblaze_tts_manifest_json
+        )
+        storage_keys.append(genblaze_tts_manifest_public)
+
     manifest_payload = _build_manifest_payload(
         media_mode=media_mode,
         storage=storage,
@@ -199,6 +239,11 @@ def _write_scene_media(
         genblaze_manifest_sha256=genblaze_manifest_sha256,
         genblaze_provider=generated.genblaze_provider,
         genblaze_model=generated.genblaze_model,
+        genblaze_tts_manifest_public_key=genblaze_tts_manifest_public,
+        genblaze_tts_manifest_sha256=genblaze_tts_manifest_sha256,
+        genblaze_tts_run_id=generated.genblaze_tts_run_id,
+        genblaze_tts_model=generated.genblaze_tts_model,
+        genblaze_tts_voice=generated.genblaze_tts_voice,
     )
     manifest_written = storage.write_json(manifest_key_logical, manifest_payload)
     storage_keys.append(manifest_written)

@@ -63,6 +63,13 @@ class PlanResponse(BaseModel):
     source_version: str
     scenes: list[Scene]
     storage_keys: list[str] = Field(default_factory=list)
+    # Planner provenance (additive): which planner produced the scenes.
+    planner: str = "deterministic"
+    planner_fallback_reason: str | None = None
+    genblaze_planner_manifest_key: str | None = None
+    genblaze_planner_manifest_sha256: str | None = None
+    genblaze_planner_run_id: str | None = None
+    genblaze_planner_model: str | None = None
 
 
 class CompareSourceRequest(BaseModel):

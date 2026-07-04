@@ -67,6 +67,16 @@ def _image_model() -> str:
     return os.getenv("SCENELEDGER_GENBLAZE_IMAGE_MODEL", "gpt-image-1").strip()
 
 
+def _tts_model() -> str:
+    # gpt-4o-mini-tts is in the SDK's OpenAI TTS family example slugs.
+    return os.getenv("SCENELEDGER_GENBLAZE_TTS_MODEL", "gpt-4o-mini-tts").strip()
+
+
+def _tts_voice() -> str:
+    # "alloy" is in the SDK's validated voice enum for OpenAI TTS.
+    return os.getenv("SCENELEDGER_GENBLAZE_TTS_VOICE", "alloy").strip()
+
+
 def _file_url_to_path(url: str) -> Path:
     parsed = urlparse(url)
     if parsed.netloc:
@@ -202,6 +212,75 @@ def _generate_genblaze_storyboard(
     )
 
 
+def _generate_genblaze_narration(
+    scene: Scene, temp_dir: Path
+) -> tuple[GeneratedAsset, GenblazeRunProvenance]:
+    """Generate spoken narration through the Genblaze OpenAI TTS provider.
+
+    Raises MediaConfigurationError on any failure — the caller falls back
+    to placeholder narration and marks it honestly.
+    """
+    from genblaze_core import Modality, Pipeline
+    from genblaze_core.exceptions import PipelineError, ProviderError
+    from genblaze_openai import OpenAITTSProvider
+
+    model = _tts_model()
+    voice = _tts_voice()
+    output_dir = str(temp_dir.resolve())
+    try:
+        result = (
+            Pipeline(f"sceneledger-{scene.scene_id}-tts")
+            .step(
+                OpenAITTSProvider(output_dir=output_dir),
+                model=model,
+                prompt=scene.narration,
+                modality=Modality.AUDIO,
+                voice=voice,
+                response_format="mp3",
+            )
+            .run(raise_on_failure=True)
+        )
+    except (ProviderError, PipelineError) as exc:
+        raise MediaConfigurationError(
+            f"Genblaze TTS narration failed for model {model!r}: {exc}"
+        ) from exc
+
+    steps = getattr(result.run, "steps", None) or []
+    if not steps:
+        raise MediaConfigurationError("Genblaze TTS pipeline returned no steps")
+    assets = getattr(steps[0], "assets", None) or []
+    if not assets:
+        raise MediaConfigurationError("Genblaze TTS pipeline returned no assets")
+    asset_url = getattr(assets[0], "url", None)
+    if not asset_url:
+        raise MediaConfigurationError("Genblaze TTS asset has no URL")
+
+    data = _read_asset_bytes(asset_url, temp_dir)
+
+    manifest_json: bytes | None = None
+    if getattr(result, "manifest", None) is not None:
+        manifest_json = result.manifest.to_canonical_json().encode("utf-8")
+
+    provenance = GenblazeRunProvenance(
+        run_id=getattr(result.run, "run_id", None),
+        manifest_json=manifest_json,
+        provider=getattr(steps[0], "provider", None),
+        model=getattr(steps[0], "model", None) or model,
+    )
+
+    return (
+        GeneratedAsset(
+            role="narration",
+            filename="narration.mp3",
+            data=data,
+            content_type="audio/mpeg",
+            generator="genblaze",
+            playable=True,
+        ),
+        provenance,
+    )
+
+
 class GenblazeAdapter:
     def generate_scene_assets(
         self, scene: Scene, ctx: SceneMediaContext
@@ -213,8 +292,25 @@ class GenblazeAdapter:
             temp_path = Path(temp_dir)
             storyboard, provenance = _generate_genblaze_storyboard(scene, temp_path)
 
+            # TTS narration: real speech when the provider succeeds; honest
+            # placeholder fallback otherwise. Never fake speech generation.
+            tts_provenance: GenblazeRunProvenance | None = None
+            try:
+                narration_asset, tts_provenance = _generate_genblaze_narration(
+                    scene, temp_path
+                )
+            except MediaConfigurationError:
+                item = generate_narration_wav(scene)
+                narration_asset = GeneratedAsset(
+                    role=item.role,
+                    filename=item.filename,
+                    data=item.data,
+                    content_type=item.content_type,
+                    generator="placeholder",
+                    playable=item.playable,
+                )
+
             clip_item = generate_clip_asset(scene, storyboard.data)
-            narration_item = generate_narration_wav(scene)
             captions_item = generate_captions_vtt(scene)
 
             assets = [
@@ -227,14 +323,7 @@ class GenblazeAdapter:
                     generator="placeholder",
                     playable=clip_item.playable,
                 ),
-                GeneratedAsset(
-                    role=narration_item.role,
-                    filename=narration_item.filename,
-                    data=narration_item.data,
-                    content_type=narration_item.content_type,
-                    generator="placeholder",
-                    playable=narration_item.playable,
-                ),
+                narration_asset,
                 GeneratedAsset(
                     role=captions_item.role,
                     filename=captions_item.filename,
@@ -252,4 +341,16 @@ class GenblazeAdapter:
                 genblaze_manifest_json=provenance.manifest_json,
                 genblaze_provider=provenance.provider,
                 genblaze_model=provenance.model,
+                genblaze_tts_manifest_json=(
+                    tts_provenance.manifest_json if tts_provenance else None
+                ),
+                genblaze_tts_run_id=(
+                    tts_provenance.run_id if tts_provenance else None
+                ),
+                genblaze_tts_model=(
+                    tts_provenance.model if tts_provenance else None
+                ),
+                genblaze_tts_voice=(
+                    _tts_voice() if tts_provenance else None
+                ),
             )

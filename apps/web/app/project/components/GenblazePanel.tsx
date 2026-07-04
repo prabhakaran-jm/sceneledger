@@ -6,16 +6,26 @@ type GenblazeProvenance = {
   asset_count: number;
 };
 
+type PlannerProvenance = {
+  planner: string;
+  fallback_reason?: string | null;
+  genblaze_manifest_key?: string | null;
+  genblaze_manifest_verified?: boolean | null;
+  genblaze_model?: string | null;
+};
+
 type GenblazePanelProps = {
   mediaMode: string;
   hasGenblazeAsset: boolean;
   provenance?: GenblazeProvenance | null;
+  plannerProvenance?: PlannerProvenance | null;
 };
 
 export function GenblazePanel({
   mediaMode,
   hasGenblazeAsset,
   provenance,
+  plannerProvenance,
 }: GenblazePanelProps) {
   const isGenblazeMode = mediaMode === "genblaze";
 
@@ -23,9 +33,10 @@ export function GenblazePanel({
     <div className="card genblaze-panel">
       <h2>Genblaze Integration</h2>
       <p className="meta">
-        Storyboard generation runs through the Genblaze SDK when configured.
-        Clip, narration, and captions are deterministic placeholders — not
-        AI-generated.
+        Scene planning, storyboards, and narration run through the Genblaze
+        SDK when configured. Clips and captions are deterministic placeholders
+        — not AI-generated. Narration falls back to a labeled placeholder if
+        TTS is unavailable.
       </p>
       <dl className="fact-grid">
         <div className="fact">
@@ -47,10 +58,33 @@ export function GenblazePanel({
           </dd>
         </div>
         <div className="fact">
+          <dt>Scene planner</dt>
+          <dd>
+            {plannerProvenance
+              ? plannerProvenance.planner === "genblaze-chat"
+                ? `Genblaze chat (${plannerProvenance.genblaze_model ?? "chat model"})${
+                    plannerProvenance.genblaze_manifest_verified != null
+                      ? plannerProvenance.genblaze_manifest_verified
+                        ? " · manifest verified"
+                        : " · manifest FAILED verification"
+                      : ""
+                  }`
+                : `Deterministic${plannerProvenance.fallback_reason ? ` — ${plannerProvenance.fallback_reason}` : ""}`
+              : "Genblaze chat when configured; deterministic fallback"}
+          </dd>
+        </div>
+        <div className="fact">
           <dt>Storyboard model</dt>
           <dd>
             <code>gpt-image-1</code> via genblaze-openai (when Genblaze mode is
             active)
+          </dd>
+        </div>
+        <div className="fact">
+          <dt>Narration (TTS)</dt>
+          <dd>
+            <code>gpt-4o-mini-tts</code> via genblaze-openai when active;
+            placeholder tone otherwise, labeled honestly
           </dd>
         </div>
         <div className="fact">
