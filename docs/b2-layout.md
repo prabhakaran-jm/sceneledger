@@ -1,11 +1,11 @@
-# Backblaze B2 Layout (M1)
+# Backblaze B2 Layout (M1 + M2)
 
-SceneLedger uses Backblaze B2 as an optional durable store for the same JSON artifacts written locally in M0. Genblaze and generated media are **not** stored in M1 — those arrive in M2.
+SceneLedger uses Backblaze B2 as an optional durable store for the same artifacts written locally in M0/M1, plus generated media in M2.
 
 ## Why B2
 
 - Durable project record for hackathon demos and judges
-- Same artifact shapes as local mode (sources, plans, compare reports, manifests)
+- Same artifact shapes as local mode (sources, plans, compare reports, manifests, media)
 - S3-compatible API works with boto3
 
 ## Storage modes
@@ -23,17 +23,21 @@ SceneLedger uses Backblaze B2 as an optional durable store for the same JSON art
 {SCENELEDGER_B2_TENANT_PREFIX}/projects/{project_id}/project.json
 {prefix}/projects/{project_id}/sources/v1/source.txt
 {prefix}/projects/{project_id}/sources/v1/chunks.json
-{prefix}/projects/{project_id}/sources/v2/source.txt
-{prefix}/projects/{project_id}/sources/v2/chunks.json
 {prefix}/projects/{project_id}/plans/v1/scenes.json
 {prefix}/projects/{project_id}/compare/v1-v2/stale-report.json
 {prefix}/projects/{project_id}/manifests/v1/release.json
+{prefix}/projects/{project_id}/media/v1/scene-001/storyboard.png
+{prefix}/projects/{project_id}/media/v1/scene-001/clip.mp4
+{prefix}/projects/{project_id}/media/v1/scene-001/clip.placeholder.txt
+{prefix}/projects/{project_id}/media/v1/scene-001/narration.wav
+{prefix}/projects/{project_id}/media/v1/scene-001/captions.vtt
+{prefix}/projects/{project_id}/media/v1/scene-001/scene-asset-manifest.json
 ```
 
 Example with default prefix:
 
 ```
-tenants/demo/projects/{project_id}/sources/v1/source.txt
+tenants/demo/projects/{project_id}/media/v1/scene-001/storyboard.png
 ```
 
 ## Local ↔ B2 mapping
@@ -41,6 +45,7 @@ tenants/demo/projects/{project_id}/sources/v1/source.txt
 | Logical path (route code) | Local file | B2 object key |
 |---------------------------|------------|---------------|
 | `projects/{id}/project.json` | `.sceneledger/projects/{id}/project.json` | `tenants/demo/projects/{id}/project.json` |
+| `projects/{id}/media/v1/scene-001/storyboard.png` | same under `.sceneledger/` | `tenants/demo/projects/{id}/media/v1/scene-001/storyboard.png` |
 
 API `storage_keys` responses use logical paths in local mode and full B2 keys in B2 mode.
 
@@ -58,18 +63,13 @@ B2_APPLICATION_KEY=your-application-key
 
 - **Endpoint** is the S3-compatible API URL — do **not** include the bucket name
 - **Bucket** is passed separately on each boto3 call
-- Credentials map to boto3 as `aws_access_key_id` / `aws_secret_access_key`
+- Binary media writes set explicit `ContentType` (`image/png`, `video/mp4`, `audio/wav`, `text/vtt`, `text/plain`)
 
-## What M1 stores
+## What is stored
 
 - Project metadata (`project.json`)
 - Source text and chunk JSON per version
 - Scene plans
 - Stale compare reports
 - Release manifests
-
-## What M2 will add
-
-- Genblaze run manifests under `manifests/genblaze-run-{run_id}.json`
-- Generated media under `scenes/{scene_id}/` (video, narration, captions, storyboard)
-- Provenance records per scene
+- Per-scene media assets and `scene-asset-manifest.json` (M2)

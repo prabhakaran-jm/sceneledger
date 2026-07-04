@@ -53,6 +53,18 @@ def infer_object_kind(key: str) -> str:
         return "compare"
     if normalized.endswith("/release.json"):
         return "manifest"
+    if normalized.endswith("/storyboard.png"):
+        return "media_storyboard"
+    if normalized.endswith("/clip.mp4"):
+        return "media_clip"
+    if normalized.endswith("/clip.placeholder.txt"):
+        return "media_clip_placeholder"
+    if normalized.endswith("/narration.wav"):
+        return "media_narration"
+    if normalized.endswith("/captions.vtt"):
+        return "media_captions"
+    if normalized.endswith("/scene-asset-manifest.json"):
+        return "media_manifest"
     return "other"
 
 
@@ -78,6 +90,16 @@ class StorageBackend(ABC):
     @abstractmethod
     def write_json(self, path: str, payload: dict[str, Any]) -> str:
         """Write JSON; return public storage key."""
+
+    @abstractmethod
+    def write_bytes(
+        self, path: str, data: bytes, content_type: str | None = None
+    ) -> str:
+        """Write binary data; return public storage key."""
+
+    @abstractmethod
+    def read_bytes(self, path: str) -> bytes:
+        """Read binary data by logical path."""
 
     @abstractmethod
     def read_json(self, path: str) -> dict[str, Any]:
@@ -123,6 +145,16 @@ class LocalFilesystemStorage(StorageBackend):
     def write_json(self, path: str, payload: dict[str, Any]) -> str:
         data = json.dumps(payload, indent=2, default=str)
         return self.write_text(path, data)
+
+    def write_bytes(
+        self, path: str, data: bytes, content_type: str | None = None
+    ) -> str:
+        logical = validate_logical_path(path)
+        self._file_path(logical).write_bytes(data)
+        return self.public_key(logical)
+
+    def read_bytes(self, path: str) -> bytes:
+        return self._file_path(path).read_bytes()
 
     def read_json(self, path: str) -> dict[str, Any]:
         return json.loads(self.read_text(path))
@@ -234,6 +266,32 @@ class B2Storage(StorageBackend):
 
         self._run("write", _put)
         return key
+
+    def write_bytes(
+        self, path: str, data: bytes, content_type: str | None = None
+    ) -> str:
+        key = self._object_key(path)
+        resolved_type = content_type or "application/octet-stream"
+
+        def _put() -> None:
+            self._client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=data,
+                ContentType=resolved_type,
+            )
+
+        self._run("write", _put)
+        return key
+
+    def read_bytes(self, path: str) -> bytes:
+        key = self._object_key(path)
+
+        def _get() -> bytes:
+            response = self._client.get_object(Bucket=self.bucket, Key=key)
+            return response["Body"].read()
+
+        return self._run("read", _get)
 
     def read_text(self, path: str) -> str:
         key = self._object_key(path)
