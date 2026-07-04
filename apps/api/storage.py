@@ -52,7 +52,7 @@ def infer_object_kind(key: str) -> str:
     if normalized.endswith("/stale-report.json"):
         return "compare"
     if normalized.endswith("/release.json"):
-        return "manifest"
+        return "release_manifest"
     if normalized.endswith("/storyboard.png"):
         return "media_storyboard"
     if normalized.endswith("/clip.mp4"):
@@ -116,6 +116,14 @@ class StorageBackend(ABC):
     @abstractmethod
     def list_project_objects(self, project_id: str) -> list[StoredObjectRef]:
         """List stored objects for a project using public keys."""
+
+    @abstractmethod
+    def logical_path(self, public_key: str) -> str:
+        """Convert a public storage key to a logical path for reads."""
+
+    def read_bytes_public(self, public_key: str) -> bytes:
+        """Read binary data using a public storage key."""
+        return self.read_bytes(self.logical_path(public_key))
 
 
 class LocalFilesystemStorage(StorageBackend):
@@ -190,6 +198,9 @@ class LocalFilesystemStorage(StorageBackend):
                 )
             )
         return objects
+
+    def logical_path(self, public_key: str) -> str:
+        return validate_logical_path(public_key)
 
 
 def _require_b2_env(name: str) -> str:
@@ -396,6 +407,13 @@ class B2Storage(StorageBackend):
             )
 
         return sorted(objects, key=lambda obj: obj.key)
+
+    def logical_path(self, public_key: str) -> str:
+        normalized = public_key.replace("\\", "/")
+        prefix = f"{self.tenant_prefix}/"
+        if not normalized.startswith(prefix):
+            raise StorageError("Public key is outside configured tenant prefix")
+        return validate_logical_path(normalized[len(prefix) :])
 
 
 @lru_cache(maxsize=1)

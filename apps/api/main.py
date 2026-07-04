@@ -19,7 +19,6 @@ from models import (
     PlanResponse,
     ProjectObjectsResponse,
     ProjectState,
-    ReleaseManifestResponse,
     ReleaseRequest,
     Scene,
     SourceChunk,
@@ -27,13 +26,20 @@ from models import (
     UploadSourceRequest,
     UploadSourceResponse,
 )
-from release_manifest import build_release_manifest, latest_stale_scene_ids
+from release_manifest import (
+    create_release_manifest,
+    latest_stale_scene_ids,
+    load_release_manifest,
+    release_manifest_key,
+    run_verify_release,
+)
+from release_models import ReleaseManifestResponse, VerifyReleaseRequest, VerifyReleaseResponse
 from scene_planner import plan_scenes
 from source_chunks import chunk_source_text
 from stale_detector import compare_scenes
 from storage import StorageError, get_storage, project_key
 
-app = FastAPI(title="SceneLedger API", version="0.3.0-m2")
+app = FastAPI(title="SceneLedger API", version="0.4.0-m3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,7 +102,7 @@ def _stale_report_key(project_id: str, base_version: str, candidate_version: str
 
 
 def _manifest_key(project_id: str, source_version: str) -> str:
-    return project_key(project_id, "manifests", source_version, "release.json")
+    return release_manifest_key(project_id, source_version)
 
 
 def _load_chunks(project_id: str, source_version: str) -> list[SourceChunk]:
@@ -272,10 +278,11 @@ def compare_source(project_id: str, body: CompareSourceRequest) -> CompareSource
 @app.post("/projects/{project_id}/release", response_model=ReleaseManifestResponse)
 def create_release(project_id: str, body: ReleaseRequest) -> ReleaseManifestResponse:
     _load_project_state(project_id)
+    chunks = _load_chunks(project_id, body.source_version)
     scenes = _load_scenes(project_id, body.source_version)
 
-    manifest = build_release_manifest(
-        storage, project_id, body.source_version, scenes
+    manifest = create_release_manifest(
+        storage, project_id, body.source_version, chunks, scenes
     )
     manifest_key = storage.write_json(
         _manifest_key(project_id, body.source_version),
@@ -285,6 +292,43 @@ def create_release(project_id: str, body: ReleaseRequest) -> ReleaseManifestResp
     if storage.backend_name == "b2":
         manifest.placeholder_b2_keys = [manifest_key]
     return manifest
+
+
+@app.get("/projects/{project_id}/release", response_model=ReleaseManifestResponse)
+def get_release(project_id: str, source_version: str) -> ReleaseManifestResponse:
+    _load_project_state(project_id)
+    manifest = load_release_manifest(storage, project_id, source_version)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail="Release manifest not found")
+    return manifest
+
+
+@app.post("/projects/{project_id}/verify-release", response_model=VerifyReleaseResponse)
+def verify_release(project_id: str, body: VerifyReleaseRequest) -> VerifyReleaseResponse:
+    _load_project_state(project_id)
+    stored = load_release_manifest(storage, project_id, body.source_version)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="Release manifest not found")
+    chunks = _load_chunks(project_id, body.source_version)
+    scenes = _load_scenes(project_id, body.source_version)
+
+    response, updated = run_verify_release(
+        storage,
+        project_id,
+        body.source_version,
+        chunks,
+        scenes,
+        stored,
+        update_manifest=body.update_manifest,
+    )
+    if updated is not None:
+        manifest_key = storage.write_json(
+            _manifest_key(project_id, body.source_version),
+            updated.model_dump(mode="json"),
+        )
+        if storage.backend_name == "b2":
+            updated.placeholder_b2_keys = [manifest_key]
+    return response
 
 
 @app.post(

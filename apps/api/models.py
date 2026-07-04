@@ -92,17 +92,6 @@ class ReleaseRequest(BaseModel):
     source_version: str
 
 
-class ReleaseManifestResponse(BaseModel):
-    project_id: str
-    source_version: str
-    scene_ids: list[str]
-    stale_scene_ids: list[str]
-    generated_at: datetime
-    placeholder_genblaze_manifest: bool = True
-    placeholder_b2_keys: list[str] = Field(default_factory=list)
-    storage_keys: list[str] = Field(default_factory=list)
-
-
 class GetProjectResponse(BaseModel):
     project_id: str
     name: str

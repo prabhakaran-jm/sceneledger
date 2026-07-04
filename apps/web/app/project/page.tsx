@@ -13,11 +13,13 @@ import {
   getProjectMedia,
   getProjectObjects,
   uploadSource,
+  verifyRelease,
   type ProjectMedia,
   type ProjectObjects,
   type ProjectSummary,
   type ReleaseManifest,
   type Scene,
+  type VerifyReleaseResponse,
 } from "@/lib/api";
 
 const DEMO_V1 = `Stop work when the alarm sounds.
@@ -58,6 +60,10 @@ export default function ProjectPage() {
   const [sourceV1, setSourceV1] = useState(DEMO_V1);
   const [sourceV2, setSourceV2] = useState(DEMO_V2);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
+  const [verifyResult, setVerifyResult] = useState<VerifyReleaseResponse | null>(
+    null
+  );
+  const [showRawRelease, setShowRawRelease] = useState(false);
   const [storageBackend, setStorageBackend] = useState<string>("local");
   const [recentKeys, setRecentKeys] = useState<string[]>([]);
   const [storedObjects, setStoredObjects] = useState<ProjectObjects | null>(
@@ -120,6 +126,7 @@ export default function ProjectPage() {
       });
       setScenes([]);
       setManifest(null);
+      setVerifyResult(null);
       setProjectMedia(null);
       setStoredObjects(null);
       setRecentKeys(created.storage_keys ?? []);
@@ -217,8 +224,24 @@ export default function ProjectPage() {
     const result = await run(() => createRelease(project.project_id, "v1"));
     if (result) {
       setManifest(result);
+      setVerifyResult(null);
       setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
-      setMessage("Release manifest created.");
+      setMessage(
+        `Release ${result.release_status}: ${result.message}`
+      );
+    }
+  }
+
+  async function handleVerifyRelease() {
+    if (!project) return;
+    const result = await run(() =>
+      verifyRelease(project.project_id, "v1", false)
+    );
+    if (result) {
+      setVerifyResult(result);
+      setMessage(
+        `Verify ${result.release_status}: hash_verified=${result.hash_verified}`
+      );
     }
   }
 
@@ -323,8 +346,121 @@ export default function ProjectPage() {
           >
             Create Release Manifest
           </button>
+          <button
+            type="button"
+            onClick={handleVerifyRelease}
+            disabled={loading || !project || !manifest}
+          >
+            Verify Release
+          </button>
         </div>
       </div>
+
+      {(manifest || verifyResult) && (
+        <section className="card">
+          <h2>Release Evidence</h2>
+          {manifest && (
+            <>
+              <p>
+                <span className={`badge release-${manifest.release_status}`}>
+                  {manifest.release_status}
+                </span>
+              </p>
+              <p className="meta">{manifest.message}</p>
+              <p className="meta">
+                source: {manifest.source_version} · release_id:{" "}
+                {manifest.release_id.slice(0, 12)}… · hash_verified:{" "}
+                {manifest.hash_verified ? "yes" : "no"}
+              </p>
+              {manifest.release_superseded_by_source_version && (
+                <p className="meta">
+                  superseded by source version:{" "}
+                  {manifest.release_superseded_by_source_version}
+                </p>
+              )}
+              <p className="meta">
+                chunks: {manifest.source.chunk_count} · stale:{" "}
+                {manifest.stale_scene_ids.join(", ") || "none"} · manifest
+                sha256: {manifest.release_manifest_sha256.slice(0, 16)}…
+              </p>
+              {manifest.genblaze_provenance.present && (
+                <p className="meta">
+                  genblaze assets: {manifest.genblaze_provenance.asset_count} ·
+                  run_ids: {manifest.genblaze_provenance.run_ids.join(", ") ||
+                    "none"}
+                </p>
+              )}
+              <ul className="checklist">
+                {Object.entries(manifest.verification).map(([key, value]) => (
+                  <li key={key}>
+                    {key}: {value ? "yes" : "no"}
+                  </li>
+                ))}
+              </ul>
+              <ul className="media-list">
+                {manifest.scenes.map((scene) => (
+                  <li key={scene.scene_id} className="media-scene">
+                    <strong>{scene.scene_id}</strong>
+                    <span className={`badge ${scene.status}`}>
+                      {scene.status}
+                    </span>
+                    <span className="meta">
+                      {" "}
+                      · media: {scene.media_status} · mode: {scene.media_mode}
+                    </span>
+                    <ul className="object-list">
+                      {(
+                        ["storyboard", "clip", "narration", "captions"] as const
+                      ).map((role) => {
+                        const asset = scene.assets[role];
+                        if (!asset) return null;
+                        return (
+                          <li key={role}>
+                            <code>{role}</code>
+                            <span className="meta">
+                              {" "}
+                              · hash ok: {asset.hash_verified ? "yes" : "no"} ·{" "}
+                              {asset.generator} · <code>{asset.key}</code>
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => setShowRawRelease((v) => !v)}
+                >
+                  {showRawRelease ? "Hide" : "Show"} raw JSON
+                </button>
+              </div>
+              {showRawRelease && (
+                <pre className="manifest">
+                  {JSON.stringify(manifest, null, 2)}
+                </pre>
+              )}
+            </>
+          )}
+          {verifyResult && (
+            <div className="verify-result">
+              <p className="meta">
+                Last verify: {verifyResult.release_status} ·{" "}
+                {verifyResult.message}
+              </p>
+              {verifyResult.errors.length > 0 && (
+                <ul className="object-list">
+                  {verifyResult.errors.map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="card">
         <h2>Media</h2>
@@ -428,12 +564,6 @@ export default function ProjectPage() {
         </section>
       )}
 
-      {manifest && (
-        <section>
-          <h2>Release Manifest</h2>
-          <pre className="manifest">{JSON.stringify(manifest, null, 2)}</pre>
-        </section>
-      )}
     </main>
   );
 }
