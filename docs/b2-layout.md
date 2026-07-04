@@ -87,3 +87,17 @@ The manifest is a durable evidence record that includes:
 - `release_manifest_sha256` — canonical JSON hash of the manifest (excluding the hash field)
 
 Use `POST /verify-release` to re-read assets from storage and confirm hashes still match.
+
+## Demo visibility (M4)
+
+During the judge demo, expect these keys under `tenants/demo/projects/{project_id}/`:
+
+| Step | Keys to highlight |
+|------|-------------------|
+| After upload v1 | `sources/v1/source.txt`, `sources/v1/chunks.json` |
+| After plan | `plans/v1/scenes.json` |
+| After media | `media/v1/scene-*/` (storyboard, clip, narration, captions, scene-asset-manifest.json) |
+| After release | `manifests/v1/release.json` (**release_manifest**) |
+| After compare | `compare/v1-v2/stale-report.json` |
+
+The UI Storage panel groups objects by kind and highlights the release manifest key. Only non-secret metadata (`tenant_prefix`) is shown in the UI — never bucket credentials.
