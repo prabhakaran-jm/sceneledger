@@ -71,5 +71,19 @@ B2_APPLICATION_KEY=your-application-key
 - Source text and chunk JSON per version
 - Scene plans
 - Stale compare reports
-- Release manifests
+- Release manifests (M3 provenance record with self-hash)
 - Per-scene media assets and `scene-asset-manifest.json` (M2)
+
+## Release manifest (M3)
+
+Stored at `manifests/{source_version}/release.json`. Object kind: `release_manifest`.
+
+The manifest is a durable evidence record that includes:
+
+- Source chunk hashes and scene plan linkage
+- Per-scene media assets with recorded and computed SHA-256
+- Stale scene IDs and `release_superseded_by_source_version` when a compare report exists
+- `genblaze_provenance` when any asset has `generator: "genblaze"`
+- `release_manifest_sha256` — canonical JSON hash of the manifest (excluding the hash field)
+
+Use `POST /verify-release` to re-read assets from storage and confirm hashes still match.

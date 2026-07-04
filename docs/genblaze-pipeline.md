@@ -70,4 +70,11 @@ pip install -r requirements-genblaze.txt
 
 ## Provenance (M3)
 
-M3 will extend release manifests with media keys and replace `placeholder_genblaze_manifest: true` with real run metadata.
+M3 consumes M2 scene manifests honestly and embeds them in the release manifest:
+
+- Each scene's `scene-asset-manifest.json` is loaded and asset bytes are re-hashed
+- `genblaze_provenance` summarizes Genblaze run IDs and asset counts when present
+- `placeholder_genblaze_manifest` remains for backward compatibility (true when no Genblaze assets)
+- Release status reflects stale scenes (`warning`) or hash/asset problems (`blocked`)
+
+Final stitched video is **M4** — M3 verifies per-scene assets only.

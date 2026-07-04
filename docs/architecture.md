@@ -8,27 +8,29 @@
 
 **M2** — scene media generation: placeholder mode (default) and optional Genblaze adapter for storyboard.
 
+**M3** — release provenance: links source chunks, scene plan, stale report, and M2 media manifests with live SHA-256 verification.
+
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────────────┐
 │  Next.js    │────▶│  FastAPI     │────▶│  Local: .sceneledger/       │
 │  apps/web   │     │  apps/api    │     │  B2: tenants/demo/projects/ │
 └─────────────┘     └──────┬───────┘     └─────────────────────────────┘
                            │
-                    ┌──────▼───────┐
-                    │ media_pipeline│
-                    └──────┬───────┘
-              ┌────────────┴────────────┐
-              │                         │
-     placeholder_adapter          genblaze_adapter
-              │                         │
-     media_placeholders.py      genblaze_core (optional)
+              ┌────────────┼────────────┐
+              │            │            │
+       media_pipeline  release_verifier  stale_detector
+              │            │            │
+     placeholder/genblaze  release_manifest
+              │            │
+              └────────────┴──▶ manifests/{version}/release.json
+                                (canonical SHA-256 self-hash)
 ```
 
 ## Monorepo layout
 
 | Path | Role |
 |------|------|
-| `apps/api` | FastAPI: chunking, planning, stale detection, manifests, storage, media |
+| `apps/api` | FastAPI: chunking, planning, stale detection, manifests, storage, media, release verification |
 | `apps/web` | Next.js demo UI |
 | `packages/pipeline` | Placeholder and Genblaze media adapters |
 | `demo/` | Sample source documents |
@@ -48,8 +50,21 @@ See [`b2-layout.md`](b2-layout.md) for the full object key map.
 2. **Plan scenes** — deterministic mock planner maps chunk-001/002/003 to scene-001/002/003.
 3. **Generate media** — per-scene storyboard, clip, narration, captions + scene manifest.
 4. **Compare** — load two uploaded versions; mark scenes stale when referenced chunk hashes differ.
-5. **Release** — JSON manifest with scene IDs and stale IDs from the latest matching compare report.
-6. **List objects** — `GET /projects/{id}/objects` returns stored keys for the active backend.
+5. **Release** — provenance manifest linking source chunks, plan, stale report, and per-scene media with SHA-256 verification.
+6. **Verify release** — re-read stored assets, recompute hashes, optionally update manifest in place (same `release_id`).
+7. **List objects** — `GET /projects/{id}/objects` returns stored keys for the active backend.
+
+## M3 release provenance
+
+When `POST /release` runs, `release_verifier.py` loads:
+
+- Source chunks (`chunks.json`) and scene plan (`scenes.json`)
+- Latest stale report where `base_version == source_version` (if any)
+- Each scene's `scene-asset-manifest.json` and underlying asset bytes
+
+It computes `release_status` (`verified` | `warning` | `blocked`), a fixed `message`, per-scene asset hash results, and `release_manifest_sha256` (canonical JSON hash excluding the hash field itself). Missing source chunks or scene plan returns **400**; missing media or hash mismatch returns **200 + blocked**.
+
+`POST /verify-release` preserves the stored `release_id` and re-runs verification without creating a new release.
 
 ## Storage abstraction
 
@@ -62,11 +77,11 @@ See [`b2-layout.md`](b2-layout.md) for the full object key map.
 | Placeholder | `SCENELEDGER_MEDIA_MODE=placeholder` | Pillow, wave, VTT, optional ffmpeg clip |
 | Genblaze | `SCENELEDGER_MEDIA_MODE=genblaze` | DALL-E storyboard when configured; other assets placeholder |
 
-## Out of scope (M2)
+## Out of scope (M3)
 
 - Authentication
 - Database
-- Final stitched video
+- Final stitched video (M4)
 - Object Lock / C2PA
 
 B2 and Genblaze are optional; local placeholder mode is the default demo path.

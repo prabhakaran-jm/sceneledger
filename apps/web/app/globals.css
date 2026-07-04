@@ -190,3 +190,39 @@ button:disabled {
 .media-scene:last-child {
   border-bottom: none;
 }
+
+.badge.verified,
+.badge.release-verified {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--current);
+}
+
+.badge.warning,
+.badge.release-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--stale);
+}
+
+.badge.blocked,
+.badge.release-blocked {
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.checklist li {
+  padding: 0.2rem 0;
+}
+
+.verify-result {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
