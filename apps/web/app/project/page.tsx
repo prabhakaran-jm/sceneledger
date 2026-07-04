@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   compareSource,
@@ -21,18 +21,18 @@ import {
   type Scene,
   type VerifyReleaseResponse,
 } from "@/lib/api";
-
-const DEMO_V1 = `Stop work when the alarm sounds.
-
-Leave through the nearest marked exit.
-
-Report to assembly point A.`;
-
-const DEMO_V2 = `Stop work when the alarm sounds.
-
-Leave through the nearest marked exit.
-
-Report to assembly point C.`;
+import {
+  DEMO_V1,
+  DEMO_V2,
+  RESET_DEMO_HELPER,
+  STALE_HINT,
+  computeStepCompletion,
+  hasGenblazeStoryboard,
+} from "@/lib/demo";
+import { DemoStepper } from "./components/DemoStepper";
+import { GenblazePanel } from "./components/GenblazePanel";
+import { ReleaseEvidencePanel } from "./components/ReleaseEvidencePanel";
+import { StoragePanel } from "./components/StoragePanel";
 
 function SceneCard({ scene }: { scene: Scene }) {
   const stale = scene.status === "stale";
@@ -63,8 +63,11 @@ export default function ProjectPage() {
   const [verifyResult, setVerifyResult] = useState<VerifyReleaseResponse | null>(
     null
   );
+  const [releaseEvidenceCreated, setReleaseEvidenceCreated] = useState(false);
   const [showRawRelease, setShowRawRelease] = useState(false);
   const [storageBackend, setStorageBackend] = useState<string>("local");
+  const [tenantPrefix, setTenantPrefix] = useState<string | null>(null);
+  const [apiVersion, setApiVersion] = useState<string>("");
   const [recentKeys, setRecentKeys] = useState<string[]>([]);
   const [storedObjects, setStoredObjects] = useState<ProjectObjects | null>(
     null
@@ -80,9 +83,32 @@ export default function ProjectPage() {
       .then((health) => {
         setStorageBackend(health.storage_backend);
         setMediaMode(health.media_mode);
+        setTenantPrefix(health.tenant_prefix ?? null);
+        setApiVersion(health.api_version ?? "");
       })
       .catch(() => setStorageBackend("unknown"));
   }, []);
+
+  const stepCompletion = useMemo(
+    () =>
+      computeStepCompletion({
+        project,
+        projectMedia,
+        manifest,
+        releaseEvidenceCreated,
+      }),
+    [project, projectMedia, manifest, releaseEvidenceCreated]
+  );
+
+  const releaseManifestKey = useMemo(() => {
+    if (manifest?.placeholder_b2_keys?.[0]) return manifest.placeholder_b2_keys[0];
+    const fromObjects = storedObjects?.objects.find(
+      (o) => o.kind === "release_manifest"
+    );
+    if (fromObjects) return fromObjects.key;
+    const fromKeys = recentKeys.find((k) => k.endsWith("release.json"));
+    return fromKeys ?? null;
+  }, [manifest, storedObjects, recentKeys]);
 
   async function run<T>(action: () => Promise<T>): Promise<T | null> {
     setLoading(true);
@@ -102,6 +128,28 @@ export default function ProjectPage() {
     const summary = await getProject(projectId);
     setProject(summary);
     return summary;
+  }
+
+  function handleResetDemo() {
+    setProject(null);
+    setScenes([]);
+    setSourceV1(DEMO_V1);
+    setSourceV2(DEMO_V2);
+    setManifest(null);
+    setVerifyResult(null);
+    setReleaseEvidenceCreated(false);
+    setProjectMedia(null);
+    setStoredObjects(null);
+    setRecentKeys([]);
+    setShowRawRelease(false);
+    setError(null);
+    setMessage("Demo reset. Click Create Project to start again.");
+  }
+
+  function handleLoadDemo() {
+    setSourceV1(DEMO_V1);
+    setSourceV2(DEMO_V2);
+    setMessage("Loaded Warehouse Safety Demo text.");
   }
 
   async function handleRefreshObjects() {
@@ -127,6 +175,7 @@ export default function ProjectPage() {
       setScenes([]);
       setManifest(null);
       setVerifyResult(null);
+      setReleaseEvidenceCreated(false);
       setProjectMedia(null);
       setStoredObjects(null);
       setRecentKeys(created.storage_keys ?? []);
@@ -225,6 +274,9 @@ export default function ProjectPage() {
     if (result) {
       setManifest(result);
       setVerifyResult(null);
+      if (result.hash_verified) {
+        setReleaseEvidenceCreated(true);
+      }
       setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage(
         `Release ${result.release_status}: ${result.message}`
@@ -252,15 +304,35 @@ export default function ProjectPage() {
       <p>
         <Link href="/">← Home</Link>
       </p>
-      <h1>Demo Project</h1>
+      <h1>SceneLedger Demo</h1>
       <p className="subtitle">
-        M0 loop: upload v1, plan scenes, upload v2, compare, release.
+        Source-linked training scenes with provenance, stale detection, and
+        release evidence. Placeholder media + B2 is the recommended judging path.
       </p>
+
+      <DemoStepper completion={stepCompletion} />
 
       {project && (
         <p className="status-bar">
-          Project: {project.project_id.slice(0, 8)}… · storage: {storageBackend}{" "}
-          · versions: {project.uploaded_source_versions.join(", ") || "none"} ·
+          Project: {project.project_id.slice(0, 8)}…
+          {apiVersion && ` · API ${apiVersion}`}
+          {" · "}
+          <span className={`badge ${storageBackend === "b2" ? "b2" : "current"}`}>
+            {storageBackend}
+          </span>
+          {" · "}
+          <span className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}>
+            {mediaMode}
+          </span>
+          {tenantPrefix && (
+            <>
+              {" · "}
+              prefix: <code>{tenantPrefix}</code>
+            </>
+          )}
+          {" · "}
+          versions: {project.uploaded_source_versions.join(", ") || "none"}
+          {" · "}
           plan: {project.has_plan ? "yes" : "no"}
           {project.latest_stale_scene_ids.length > 0 &&
             ` · stale: ${project.latest_stale_scene_ids.join(", ")}`}
@@ -270,17 +342,38 @@ export default function ProjectPage() {
       {error && <p className="error">{error}</p>}
       {message && <p className="message">{message}</p>}
 
-      <div className="card">
-        <h2>Project</h2>
+      <div className="card step-card">
+        <h2>
+          <span className="step-badge">1</span> Project
+        </h2>
         <div className="actions">
           <button type="button" onClick={handleCreateProject} disabled={loading}>
             Create Project
           </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleLoadDemo}
+            disabled={loading}
+          >
+            Load Warehouse Safety Demo
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleResetDemo}
+            disabled={loading}
+          >
+            Reset Demo
+          </button>
         </div>
+        <p className="meta">{RESET_DEMO_HELPER}</p>
       </div>
 
-      <div className="card">
-        <h2>Source v1</h2>
+      <div className="card step-card">
+        <h2>
+          <span className="step-badge">2–4</span> Source v1 · Plan · Media
+        </h2>
         <textarea
           value={sourceV1}
           onChange={(e) => setSourceV1(e.target.value)}
@@ -309,10 +402,55 @@ export default function ProjectPage() {
             Generate Media
           </button>
         </div>
+        {scenes.length > 0 && (
+          <div className="scene-grid">
+            {scenes.map((scene) => (
+              <SceneCard key={scene.scene_id} scene={scene} />
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="card">
-        <h2>Source v2</h2>
+      <div className="card step-card">
+        <h2>
+          <span className="step-badge">5</span> Release evidence
+        </h2>
+        <p className="meta">
+          Create a verified release manifest linking source chunks, media assets,
+          and SHA-256 hashes.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={handleRelease}
+            disabled={loading || !project}
+          >
+            Create Release Manifest
+          </button>
+          <button
+            type="button"
+            onClick={handleVerifyRelease}
+            disabled={loading || !project || !manifest}
+          >
+            Verify Release
+          </button>
+        </div>
+      </div>
+
+      {manifest && (
+        <ReleaseEvidencePanel
+          manifest={manifest}
+          verifyResult={verifyResult}
+          showRawRelease={showRawRelease}
+          onToggleRaw={() => setShowRawRelease((v) => !v)}
+        />
+      )}
+
+      <div className="card step-card">
+        <h2>
+          <span className="step-badge">6–7</span> Source v2 · Compare
+        </h2>
+        <p className="meta">{STALE_HINT}</p>
         <textarea
           value={sourceV2}
           onChange={(e) => setSourceV2(e.target.value)}
@@ -336,8 +474,14 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      <div className="card">
-        <h2>Release</h2>
+      <div className="card step-card">
+        <h2>
+          <span className="step-badge">8</span> Recreate release evidence
+        </h2>
+        <p className="meta">
+          After compare, create release again to see warning status and
+          superseded-by v2.
+        </p>
         <div className="actions">
           <button
             type="button"
@@ -346,131 +490,21 @@ export default function ProjectPage() {
           >
             Create Release Manifest
           </button>
-          <button
-            type="button"
-            onClick={handleVerifyRelease}
-            disabled={loading || !project || !manifest}
-          >
-            Verify Release
-          </button>
         </div>
       </div>
 
-      {(manifest || verifyResult) && (
-        <section className="card">
-          <h2>Release Evidence</h2>
-          {manifest && (
-            <>
-              <p>
-                <span className={`badge release-${manifest.release_status}`}>
-                  {manifest.release_status}
-                </span>
-              </p>
-              <p className="meta">{manifest.message}</p>
-              <p className="meta">
-                source: {manifest.source_version} · release_id:{" "}
-                {manifest.release_id.slice(0, 12)}… · hash_verified:{" "}
-                {manifest.hash_verified ? "yes" : "no"}
-              </p>
-              {manifest.release_superseded_by_source_version && (
-                <p className="meta">
-                  superseded by source version:{" "}
-                  {manifest.release_superseded_by_source_version}
-                </p>
-              )}
-              <p className="meta">
-                chunks: {manifest.source.chunk_count} · stale:{" "}
-                {manifest.stale_scene_ids.join(", ") || "none"} · manifest
-                sha256: {manifest.release_manifest_sha256.slice(0, 16)}…
-              </p>
-              {manifest.genblaze_provenance.present && (
-                <p className="meta">
-                  genblaze assets: {manifest.genblaze_provenance.asset_count} ·
-                  run_ids: {manifest.genblaze_provenance.run_ids.join(", ") ||
-                    "none"}
-                </p>
-              )}
-              <ul className="checklist">
-                {Object.entries(manifest.verification).map(([key, value]) => (
-                  <li key={key}>
-                    {key}: {value ? "yes" : "no"}
-                  </li>
-                ))}
-              </ul>
-              <ul className="media-list">
-                {manifest.scenes.map((scene) => (
-                  <li key={scene.scene_id} className="media-scene">
-                    <strong>{scene.scene_id}</strong>
-                    <span className={`badge ${scene.status}`}>
-                      {scene.status}
-                    </span>
-                    <span className="meta">
-                      {" "}
-                      · media: {scene.media_status} · mode: {scene.media_mode}
-                    </span>
-                    <ul className="object-list">
-                      {(
-                        ["storyboard", "clip", "narration", "captions"] as const
-                      ).map((role) => {
-                        const asset = scene.assets[role];
-                        if (!asset) return null;
-                        return (
-                          <li key={role}>
-                            <code>{role}</code>
-                            <span className="meta">
-                              {" "}
-                              · hash ok: {asset.hash_verified ? "yes" : "no"} ·{" "}
-                              {asset.generator} · <code>{asset.key}</code>
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-              <div className="actions">
-                <button
-                  type="button"
-                  onClick={() => setShowRawRelease((v) => !v)}
-                >
-                  {showRawRelease ? "Hide" : "Show"} raw JSON
-                </button>
-              </div>
-              {showRawRelease && (
-                <pre className="manifest">
-                  {JSON.stringify(manifest, null, 2)}
-                </pre>
-              )}
-            </>
-          )}
-          {verifyResult && (
-            <div className="verify-result">
-              <p className="meta">
-                Last verify: {verifyResult.release_status} ·{" "}
-                {verifyResult.message}
-              </p>
-              {verifyResult.errors.length > 0 && (
-                <ul className="object-list">
-                  {verifyResult.errors.map((err) => (
-                    <li key={err}>{err}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+      <GenblazePanel
+        mediaMode={mediaMode}
+        hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
+      />
 
       <div className="card">
         <h2>Media</h2>
         <p className="meta">
-          Current mode: {mediaMode}
-          {projectMedia &&
-            projectMedia.scenes.some(
-              (scene) => scene.media_mode !== projectMedia.current_media_mode
-            ) &&
-            " · stored scenes may use a different mode"}
+          Current mode:{" "}
+          <span className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}>
+            {mediaMode}
+          </span>
         </p>
         <div className="actions">
           <button
@@ -486,9 +520,7 @@ export default function ProjectPage() {
             {projectMedia.scenes.map((scene) => (
               <li key={scene.scene_id} className="media-scene">
                 <strong>{scene.scene_id}</strong>
-                <span className={`badge ${scene.status === "complete" || scene.status === "skipped" ? "current" : "stale"}`}>
-                  {scene.status}
-                </span>
+                <span className="badge current">{scene.status}</span>
                 <span className="meta"> · mode: {scene.media_mode}</span>
                 <ul className="object-list">
                   {(["storyboard", "clip", "narration", "captions"] as const).map(
@@ -499,8 +531,7 @@ export default function ProjectPage() {
                           <code>{role}</code>
                           <span className="meta">
                             {" "}
-                            · {asset.generator} · {asset.content_type} ·
-                            playable: {asset.playable ? "yes" : "no"} · sha256:{" "}
+                            · {asset.generator} · sha256:{" "}
                             {asset.sha256.slice(0, 12)}…
                           </span>
                         </li>
@@ -514,56 +545,15 @@ export default function ProjectPage() {
         )}
       </div>
 
-      <div className="card">
-        <h2>Storage</h2>
-        <p className="meta">Backend: {storageBackend}</p>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleRefreshObjects}
-            disabled={loading || !project}
-          >
-            Refresh Stored Objects
-          </button>
-        </div>
-        {recentKeys.length > 0 && (
-          <>
-            <p className="meta">Keys written this session:</p>
-            <ul className="object-list">
-              {recentKeys.map((key) => (
-                <li key={key}>
-                  <code>{key}</code>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        {objectList.length > 0 && (
-          <>
-            <p className="meta">Stored objects ({objectList.length}):</p>
-            <ul className="object-list">
-              {objectList.map((obj) => (
-                <li key={obj.key}>
-                  <code>{obj.key}</code>
-                  <span className="meta"> · {obj.kind}</span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-
-      {scenes.length > 0 && (
-        <section>
-          <h2>Scenes</h2>
-          <div className="scene-grid">
-            {scenes.map((scene) => (
-              <SceneCard key={scene.scene_id} scene={scene} />
-            ))}
-          </div>
-        </section>
-      )}
-
+      <StoragePanel
+        storageBackend={storageBackend}
+        tenantPrefix={tenantPrefix}
+        objects={objectList}
+        recentKeys={recentKeys}
+        releaseManifestKey={releaseManifestKey}
+        onRefresh={handleRefreshObjects}
+        refreshDisabled={loading || !project}
+      />
     </main>
   );
 }

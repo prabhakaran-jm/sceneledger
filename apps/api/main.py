@@ -1,5 +1,6 @@
 """SceneLedger API — M0 loop with M1 optional B2 storage and M2 media pipeline."""
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -37,13 +38,22 @@ from release_models import ReleaseManifestResponse, VerifyReleaseRequest, Verify
 from scene_planner import plan_scenes
 from source_chunks import chunk_source_text
 from stale_detector import compare_scenes
-from storage import StorageError, get_storage, project_key
+from storage import B2Storage, StorageError, get_storage, project_key
 
-app = FastAPI(title="SceneLedger API", version="0.4.0-m3")
+APP_VERSION = "0.5.0-m4"
+
+app = FastAPI(title="SceneLedger API", version=APP_VERSION)
+
+_cors_origins = os.getenv(
+    "SCENELEDGER_CORS_ORIGINS", "http://localhost:3000"
+).strip()
+_cors_origin_list = [
+    origin.strip() for origin in _cors_origins.split(",") if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origin_list or ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -145,12 +155,17 @@ def _has_plan(project_id: str) -> bool:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, str | None]:
+    tenant_prefix: str | None = None
+    if isinstance(storage, B2Storage):
+        tenant_prefix = storage.tenant_prefix
     return {
         "status": "ok",
         "service": "sceneledger-api",
+        "api_version": APP_VERSION,
         "storage_backend": storage.backend_name,
         "media_mode": get_media_mode(),
+        "tenant_prefix": tenant_prefix,
     }
 
 

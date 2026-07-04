@@ -10,6 +10,10 @@
 
 **M3** — release provenance: links source chunks, scene plan, stale report, and M2 media manifests with live SHA-256 verification.
 
+**M4** — demo polish for hackathon judging: guided UI stepper, B2 visibility, release evidence table, Devpost docs. No new backend architecture.
+
+**M5 (future)** — final stitched training video compose.
+
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────────────┐
 │  Next.js    │────▶│  FastAPI     │────▶│  Local: .sceneledger/       │
@@ -77,11 +81,22 @@ It computes `release_status` (`verified` | `warning` | `blocked`), a fixed `mess
 | Placeholder | `SCENELEDGER_MEDIA_MODE=placeholder` | Pillow, wave, VTT, optional ffmpeg clip |
 | Genblaze | `SCENELEDGER_MEDIA_MODE=genblaze` | DALL-E storyboard when configured; other assets placeholder |
 
-## Out of scope (M3)
+## Judge demo path (M4)
+
+The web UI at `/project` guides judges through eight steps:
+
+1. Create project → 2. Upload v1 → 3. Plan → 4. Media → 5. Release evidence (sticky when `hash_verified`) → 6. Upload v2 → 7. Compare → 8. Warning release
+
+Recommended: **placeholder media + B2 storage**. Genblaze Integration panel explains optional storyboard path.
+
+See [`deployment.md`](deployment.md).
+
+## Out of scope (M4)
 
 - Authentication
 - Database
-- Final stitched video (M4)
+- Final stitched video (M5)
 - Object Lock / C2PA
+- New provider integrations beyond existing optional Genblaze storyboard path
 
 B2 and Genblaze are optional; local placeholder mode is the default demo path.

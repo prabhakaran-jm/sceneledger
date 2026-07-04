@@ -77,4 +77,11 @@ M3 consumes M2 scene manifests honestly and embeds them in the release manifest:
 - `placeholder_genblaze_manifest` remains for backward compatibility (true when no Genblaze assets)
 - Release status reflects stale scenes (`warning`) or hash/asset problems (`blocked`)
 
-Final stitched video is **M4** — M3 verifies per-scene assets only.
+Final stitched video is **M5 (future)** — M3/M4 verify per-scene assets only.
+
+## Judging recommendation (M4)
+
+- **Primary path:** `SCENELEDGER_MEDIA_MODE=placeholder` — deterministic, no API keys, reliable for demos
+- **Optional path:** `SCENELEDGER_MEDIA_MODE=genblaze` — real storyboard via `gpt-image-1` when `OPENAI_API_KEY` and `requirements-genblaze.txt` are configured
+- The Genblaze Integration panel in the UI shows `media_mode`, configured status, and whether any manifest has `generator: "genblaze"`
+- SceneLedger **never fakes** Genblaze output
