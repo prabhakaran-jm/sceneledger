@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   compareSource,
   createProject,
   createRelease,
   generatePlan,
+  getHealth,
   getProject,
+  getProjectObjects,
   uploadSource,
+  type ProjectObjects,
   type ProjectSummary,
   type ReleaseManifest,
   type Scene,
@@ -42,15 +45,30 @@ function SceneCard({ scene }: { scene: Scene }) {
   );
 }
 
+function mergeKeys(existing: string[], incoming: string[] = []) {
+  return [...new Set([...existing, ...incoming])];
+}
+
 export default function ProjectPage() {
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [sourceV1, setSourceV1] = useState(DEMO_V1);
   const [sourceV2, setSourceV2] = useState(DEMO_V2);
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
+  const [storageBackend, setStorageBackend] = useState<string>("local");
+  const [recentKeys, setRecentKeys] = useState<string[]>([]);
+  const [storedObjects, setStoredObjects] = useState<ProjectObjects | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    getHealth()
+      .then((health) => setStorageBackend(health.storage_backend))
+      .catch(() => setStorageBackend("unknown"));
+  }, []);
 
   async function run<T>(action: () => Promise<T>): Promise<T | null> {
     setLoading(true);
@@ -72,6 +90,16 @@ export default function ProjectPage() {
     return summary;
   }
 
+  async function handleRefreshObjects() {
+    if (!project) return;
+    const result = await run(() => getProjectObjects(project.project_id));
+    if (result) {
+      setStoredObjects(result);
+      setStorageBackend(result.storage_backend);
+      setMessage(`Listed ${result.objects.length} stored objects.`);
+    }
+  }
+
   async function handleCreateProject() {
     const created = await run(() => createProject("Warehouse Safety Demo"));
     if (created) {
@@ -84,6 +112,8 @@ export default function ProjectPage() {
       });
       setScenes([]);
       setManifest(null);
+      setStoredObjects(null);
+      setRecentKeys(created.storage_keys ?? []);
       setMessage("Project created.");
     }
   }
@@ -97,6 +127,7 @@ export default function ProjectPage() {
       await refreshProject(project.project_id);
       setScenes([]);
       setManifest(null);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage(`Uploaded v1 with ${result.chunks.length} chunks.`);
     }
   }
@@ -108,6 +139,7 @@ export default function ProjectPage() {
       await refreshProject(project.project_id);
       setScenes(result.scenes);
       setManifest(null);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage("Generated 3-scene plan.");
     }
   }
@@ -119,6 +151,7 @@ export default function ProjectPage() {
     );
     if (result) {
       await refreshProject(project.project_id);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage(`Uploaded v2 with ${result.chunks.length} chunks.`);
     }
   }
@@ -131,6 +164,7 @@ export default function ProjectPage() {
     if (result) {
       await refreshProject(project.project_id);
       setScenes(result.scenes);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage(
         `Compare complete. Stale: ${result.stale_scene_ids.join(", ") || "none"}.`
       );
@@ -142,9 +176,12 @@ export default function ProjectPage() {
     const result = await run(() => createRelease(project.project_id, "v1"));
     if (result) {
       setManifest(result);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       setMessage("Release manifest created.");
     }
   }
+
+  const objectList = storedObjects?.objects ?? [];
 
   return (
     <main>
@@ -158,9 +195,9 @@ export default function ProjectPage() {
 
       {project && (
         <p className="status-bar">
-          Project: {project.project_id.slice(0, 8)}… · versions:{" "}
-          {project.uploaded_source_versions.join(", ") || "none"} · plan:{" "}
-          {project.has_plan ? "yes" : "no"}
+          Project: {project.project_id.slice(0, 8)}… · storage: {storageBackend}{" "}
+          · versions: {project.uploaded_source_versions.join(", ") || "none"} ·
+          plan: {project.has_plan ? "yes" : "no"}
           {project.latest_stale_scene_ids.length > 0 &&
             ` · stale: ${project.latest_stale_scene_ids.join(", ")}`}
         </p>
@@ -239,6 +276,45 @@ export default function ProjectPage() {
             Create Release Manifest
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Storage</h2>
+        <p className="meta">Backend: {storageBackend}</p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={handleRefreshObjects}
+            disabled={loading || !project}
+          >
+            Refresh Stored Objects
+          </button>
+        </div>
+        {recentKeys.length > 0 && (
+          <>
+            <p className="meta">Keys written this session:</p>
+            <ul className="object-list">
+              {recentKeys.map((key) => (
+                <li key={key}>
+                  <code>{key}</code>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {objectList.length > 0 && (
+          <>
+            <p className="meta">Stored objects ({objectList.length}):</p>
+            <ul className="object-list">
+              {objectList.map((obj) => (
+                <li key={obj.key}>
+                  <code>{obj.key}</code>
+                  <span className="meta"> · {obj.kind}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       {scenes.length > 0 && (

@@ -25,6 +25,13 @@ class ProjectState(BaseModel):
     name: str
 
 
+class StoredObjectRef(BaseModel):
+    key: str
+    kind: str
+    size: int | None = None
+    updated_at: datetime | None = None
+
+
 class CreateProjectRequest(BaseModel):
     name: str
 
@@ -32,6 +39,7 @@ class CreateProjectRequest(BaseModel):
 class CreateProjectResponse(BaseModel):
     project_id: str
     name: str
+    storage_keys: list[str] = Field(default_factory=list)
 
 
 class UploadSourceRequest(BaseModel):
@@ -43,6 +51,7 @@ class UploadSourceResponse(BaseModel):
     project_id: str
     source_version: str
     chunks: list[SourceChunk]
+    storage_keys: list[str] = Field(default_factory=list)
 
 
 class PlanRequest(BaseModel):
@@ -53,6 +62,7 @@ class PlanResponse(BaseModel):
     project_id: str
     source_version: str
     scenes: list[Scene]
+    storage_keys: list[str] = Field(default_factory=list)
 
 
 class CompareSourceRequest(BaseModel):
@@ -66,6 +76,7 @@ class CompareSourceResponse(BaseModel):
     candidate_version: str
     stale_scene_ids: list[str]
     scenes: list[Scene]
+    storage_keys: list[str] = Field(default_factory=list)
 
 
 class StaleReport(BaseModel):
@@ -89,6 +100,7 @@ class ReleaseManifestResponse(BaseModel):
     generated_at: datetime
     placeholder_genblaze_manifest: bool = True
     placeholder_b2_keys: list[str] = Field(default_factory=list)
+    storage_keys: list[str] = Field(default_factory=list)
 
 
 class GetProjectResponse(BaseModel):
@@ -97,3 +109,9 @@ class GetProjectResponse(BaseModel):
     uploaded_source_versions: list[str]
     has_plan: bool
     latest_stale_scene_ids: list[str]
+
+
+class ProjectObjectsResponse(BaseModel):
+    project_id: str
+    storage_backend: str
+    objects: list[StoredObjectRef]
