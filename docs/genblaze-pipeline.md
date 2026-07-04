@@ -1,28 +1,73 @@
-# Genblaze Pipeline (placeholder)
+# Genblaze Pipeline (M2)
 
-Real Genblaze orchestration is not implemented in the MVP scaffold. This doc describes the intended pipeline.
+SceneLedger M2 adds per-scene media generation with two modes:
 
-## Target steps
+| Mode | Env | Dependencies |
+|------|-----|--------------|
+| **Placeholder** (default) | `SCENELEDGER_MEDIA_MODE=placeholder` | `apps/api/requirements.txt` only |
+| **Genblaze** (optional) | `SCENELEDGER_MEDIA_MODE=genblaze` | `pip install -r requirements-genblaze.txt` + `OPENAI_API_KEY` |
 
-1. **Storyboard** — image frames from `visual_prompt` per scene
-2. **Video** — short clips from storyboard frames
-3. **Narration** — TTS from `narration` text
-4. **Captions** — VTT aligned to narration
-5. **Compose** — FFmpeg merge into final scene clip
+## Placeholder pipeline
 
-## Provenance
+Deterministic assets per scene under:
 
-Each run should record:
+```
+projects/{project_id}/media/{source_version}/{scene_id}/
+  storyboard.png
+  clip.mp4              # if ffmpeg on PATH
+  clip.placeholder.txt  # if ffmpeg missing (playable: false)
+  narration.wav
+  captions.vtt
+  scene-asset-manifest.json
+```
 
-- Source chunk IDs and hashes used
-- Model / provider IDs
-- Output B2 keys
-- Genblaze run ID
+Each manifest includes `status: "complete"`, `media_mode`, and per-asset metadata (`sha256`, `content_type`, `generator`, `playable`).
 
-## MVP behavior
+## Genblaze pipeline (partial M2 scope)
 
-`release_manifest.py` emits a `placeholder_genblaze_manifest` with step names and status `"placeholder"`. Wire Genblaze in `packages/pipeline` when provider keys are available.
+When configured, Genblaze generates the **storyboard** via documented APIs:
+
+```python
+from genblaze_core import Pipeline, Modality
+from genblaze_openai import DalleProvider
+
+Pipeline(f"sceneledger-{scene_id}").step(
+    DalleProvider(output_dir=temp_dir),
+    model="gpt-image-1",
+    prompt=scene.visual_prompt,
+    modality=Modality.IMAGE,
+).run()
+```
+
+Clip, narration, and captions remain placeholder-generated until provider keys and adapters are wired. Manifests mark each asset's `generator` honestly (`genblaze` vs `placeholder`).
+
+### Asset read rules
+
+The Genblaze adapter reads provider output bytes only from:
+
+- `file://` URLs under the adapter temp directory
+- `https://` URLs with timeout
+
+Bytes are re-hashed locally with SHA-256. Signed URLs and secrets are never logged.
+
+## Out of scope (M2)
+
+- Final stitched video
+- Real voiceover quality
+- Auth, database, Object Lock, C2PA
+- Fake "all-genblaze" completion when providers are missing
 
 ## Environment
 
-See `.env.example` for `GMI_API_KEY`, `GENBLAZE_STORAGE_PROVIDER`, and related vars. Do not commit real keys.
+See [`.env.example`](../.env.example). Do not commit real keys.
+
+Optional install:
+
+```bash
+cd apps/api
+pip install -r requirements-genblaze.txt
+```
+
+## Provenance (M3)
+
+M3 will extend release manifests with media keys and replace `placeholder_genblaze_manifest: true` with real run metadata.

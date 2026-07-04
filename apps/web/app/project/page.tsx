@@ -6,11 +6,14 @@ import {
   compareSource,
   createProject,
   createRelease,
+  generateMedia,
   generatePlan,
   getHealth,
   getProject,
+  getProjectMedia,
   getProjectObjects,
   uploadSource,
+  type ProjectMedia,
   type ProjectObjects,
   type ProjectSummary,
   type ReleaseManifest,
@@ -60,13 +63,18 @@ export default function ProjectPage() {
   const [storedObjects, setStoredObjects] = useState<ProjectObjects | null>(
     null
   );
+  const [mediaMode, setMediaMode] = useState<string>("placeholder");
+  const [projectMedia, setProjectMedia] = useState<ProjectMedia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getHealth()
-      .then((health) => setStorageBackend(health.storage_backend))
+      .then((health) => {
+        setStorageBackend(health.storage_backend);
+        setMediaMode(health.media_mode);
+      })
       .catch(() => setStorageBackend("unknown"));
   }, []);
 
@@ -112,6 +120,7 @@ export default function ProjectPage() {
       });
       setScenes([]);
       setManifest(null);
+      setProjectMedia(null);
       setStoredObjects(null);
       setRecentKeys(created.storage_keys ?? []);
       setMessage("Project created.");
@@ -168,6 +177,38 @@ export default function ProjectPage() {
       setMessage(
         `Compare complete. Stale: ${result.stale_scene_ids.join(", ") || "none"}.`
       );
+    }
+  }
+
+  async function handleGenerateMedia() {
+    if (!project) return;
+    const result = await run(() =>
+      generateMedia(project.project_id, "v1")
+    );
+    if (result) {
+      setProjectMedia({
+        project_id: result.project_id,
+        source_version: result.source_version,
+        current_media_mode: result.media_mode,
+        scenes: result.scenes,
+      });
+      setMediaMode(result.media_mode);
+      setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
+      const complete = result.scenes.filter((s) => s.status === "complete").length;
+      const skipped = result.scenes.filter((s) => s.status === "skipped").length;
+      setMessage(
+        `Media generation: ${complete} complete, ${skipped} skipped (${result.media_mode}).`
+      );
+    }
+  }
+
+  async function handleRefreshMedia() {
+    if (!project) return;
+    const result = await run(() => getProjectMedia(project.project_id, "v1"));
+    if (result) {
+      setProjectMedia(result);
+      setMediaMode(result.current_media_mode);
+      setMessage(`Loaded media for ${result.scenes.length} scene(s).`);
     }
   }
 
@@ -237,6 +278,13 @@ export default function ProjectPage() {
           >
             Generate Scene Plan
           </button>
+          <button
+            type="button"
+            onClick={handleGenerateMedia}
+            disabled={loading || !project || !project.has_plan}
+          >
+            Generate Media
+          </button>
         </div>
       </div>
 
@@ -276,6 +324,58 @@ export default function ProjectPage() {
             Create Release Manifest
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Media</h2>
+        <p className="meta">
+          Current mode: {mediaMode}
+          {projectMedia &&
+            projectMedia.scenes.some(
+              (scene) => scene.media_mode !== projectMedia.current_media_mode
+            ) &&
+            " · stored scenes may use a different mode"}
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={handleRefreshMedia}
+            disabled={loading || !project}
+          >
+            Refresh Media
+          </button>
+        </div>
+        {projectMedia && projectMedia.scenes.length > 0 && (
+          <ul className="media-list">
+            {projectMedia.scenes.map((scene) => (
+              <li key={scene.scene_id} className="media-scene">
+                <strong>{scene.scene_id}</strong>
+                <span className={`badge ${scene.status === "complete" || scene.status === "skipped" ? "current" : "stale"}`}>
+                  {scene.status}
+                </span>
+                <span className="meta"> · mode: {scene.media_mode}</span>
+                <ul className="object-list">
+                  {(["storyboard", "clip", "narration", "captions"] as const).map(
+                    (role) => {
+                      const asset = scene.assets[role];
+                      return (
+                        <li key={role}>
+                          <code>{role}</code>
+                          <span className="meta">
+                            {" "}
+                            · {asset.generator} · {asset.content_type} ·
+                            playable: {asset.playable ? "yes" : "no"} · sha256:{" "}
+                            {asset.sha256.slice(0, 12)}…
+                          </span>
+                        </li>
+                      );
+                    }
+                  )}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="card">

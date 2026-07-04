@@ -175,3 +175,18 @@ button:disabled {
 .object-list code {
   font-size: 0.82rem;
 }
+
+.media-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+}
+
+.media-scene {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.media-scene:last-child {
+  border-bottom: none;
+}

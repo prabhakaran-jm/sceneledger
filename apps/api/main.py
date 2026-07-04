@@ -1,4 +1,4 @@
-"""SceneLedger API — M0 loop with M1 optional B2 storage."""
+"""SceneLedger API — M0 loop with M1 optional B2 storage and M2 media pipeline."""
 
 import uuid
 from datetime import datetime, timezone
@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from media_models import GenerateMediaRequest, GenerateMediaResponse, ProjectMediaResponse
+from media_pipeline import MediaError, generate_project_media, get_media_mode, load_project_media
 from models import (
     CompareSourceRequest,
     CompareSourceResponse,
@@ -31,7 +33,7 @@ from source_chunks import chunk_source_text
 from stale_detector import compare_scenes
 from storage import StorageError, get_storage, project_key
 
-app = FastAPI(title="SceneLedger API", version="0.2.0-m1")
+app = FastAPI(title="SceneLedger API", version="0.3.0-m2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +48,11 @@ storage = get_storage()
 
 @app.exception_handler(StorageError)
 async def storage_error_handler(_request: Request, exc: StorageError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(MediaError)
+async def media_error_handler(_request: Request, exc: MediaError) -> JSONResponse:
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
@@ -137,6 +144,7 @@ def health() -> dict[str, str]:
         "status": "ok",
         "service": "sceneledger-api",
         "storage_backend": storage.backend_name,
+        "media_mode": get_media_mode(),
     }
 
 
@@ -277,3 +285,31 @@ def create_release(project_id: str, body: ReleaseRequest) -> ReleaseManifestResp
     if storage.backend_name == "b2":
         manifest.placeholder_b2_keys = [manifest_key]
     return manifest
+
+
+@app.post(
+    "/projects/{project_id}/generate-media",
+    response_model=GenerateMediaResponse,
+)
+def generate_media(
+    project_id: str, body: GenerateMediaRequest
+) -> GenerateMediaResponse:
+    _load_project_state(project_id)
+    scenes = _load_scenes(project_id, body.source_version)
+    try:
+        return generate_project_media(storage, project_id, body, scenes)
+    except MediaError as exc:
+        if "Unknown scene IDs" in str(exc):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise
+
+
+@app.get(
+    "/projects/{project_id}/media",
+    response_model=ProjectMediaResponse,
+)
+def get_project_media(
+    project_id: str, source_version: str
+) -> ProjectMediaResponse:
+    _load_project_state(project_id)
+    return load_project_media(storage, project_id, source_version)
