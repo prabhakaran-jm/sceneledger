@@ -22,9 +22,15 @@ const GROUP_ORDER: ObjectGroup[] = [
   "compare",
   "media",
   "media_manifest",
+  "genblaze_manifest",
   "release_manifest",
   "other",
 ];
+
+const HIGHLIGHT_GROUPS: Set<ObjectGroup> = new Set([
+  "release_manifest",
+  "genblaze_manifest",
+]);
 
 export function StoragePanel({
   storageBackend,
@@ -42,19 +48,24 @@ export function StoragePanel({
     <div className="card">
       <h2>Storage</h2>
       <div className="storage-header">
-        <span className={`badge ${isB2 ? "b2" : "current"}`}>
-          {isB2 ? "B2" : storageBackend}
+        <span className={`badge ${isB2 ? "b2" : "neutral"}`}>
+          {isB2 ? "Backblaze B2" : storageBackend}
         </span>
+        <span className="badge neutral">{objects.length} objects</span>
         {tenantPrefix && (
           <span className="meta">
-            tenant prefix: <code>{tenantPrefix}</code>
+            prefix: <code>{tenantPrefix}</code>
           </span>
         )}
-        <span className="meta">objects: {objects.length}</span>
       </div>
       {onRefresh && (
         <div className="actions">
-          <button type="button" onClick={onRefresh} disabled={refreshDisabled}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onRefresh}
+            disabled={refreshDisabled}
+          >
             Refresh Stored Objects
           </button>
         </div>
@@ -65,9 +76,15 @@ export function StoragePanel({
           <code>{releaseManifestKey}</code>
         </p>
       )}
+      {objects.length === 0 && recentKeys.length === 0 && (
+        <p className="empty-state">
+          No stored objects yet — create a project and upload a source, then
+          refresh to see the object layout.
+        </p>
+      )}
       {recentKeys.length > 0 && (
-        <>
-          <p className="meta">Keys written this session:</p>
+        <details className="asset-details">
+          <summary>Keys written this session ({recentKeys.length})</summary>
           <ul className="object-list compact-list">
             {recentKeys.map((key) => (
               <li key={key}>
@@ -75,15 +92,19 @@ export function StoragePanel({
               </li>
             ))}
           </ul>
-        </>
+        </details>
       )}
       {objects.length > 0 && (
         <div className="storage-groups">
           {GROUP_ORDER.map((group) => {
             const items = grouped[group];
             if (items.length === 0) return null;
+            const highlight = HIGHLIGHT_GROUPS.has(group);
             return (
-              <div key={group} className="storage-group">
+              <div
+                key={group}
+                className={`storage-group${highlight ? " storage-group-highlight" : ""}`}
+              >
                 <h3>
                   {OBJECT_GROUP_LABELS[group]} ({items.length})
                 </h3>

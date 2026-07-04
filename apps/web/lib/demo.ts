@@ -91,6 +91,7 @@ export type ObjectGroup =
   | "compare"
   | "media"
   | "media_manifest"
+  | "genblaze_manifest"
   | "release_manifest"
   | "other";
 
@@ -101,6 +102,7 @@ export const OBJECT_GROUP_LABELS: Record<ObjectGroup, string> = {
   compare: "Compare",
   media: "Media assets",
   media_manifest: "Media manifests",
+  genblaze_manifest: "Genblaze provenance",
   release_manifest: "Release manifest",
   other: "Other",
 };
@@ -120,6 +122,7 @@ export function objectKindToGroup(kind: string): ObjectGroup {
   if (kind === "compare") return "compare";
   if (MEDIA_KINDS.has(kind)) return "media";
   if (kind === "media_manifest") return "media_manifest";
+  if (kind === "genblaze_manifest") return "genblaze_manifest";
   if (kind === "release_manifest") return "release_manifest";
   return "other";
 }
@@ -134,6 +137,7 @@ export function groupStoredObjects(
     compare: [],
     media: [],
     media_manifest: [],
+    genblaze_manifest: [],
     release_manifest: [],
     other: [],
   };
