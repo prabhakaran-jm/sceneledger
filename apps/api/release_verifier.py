@@ -63,6 +63,59 @@ def _scene_media_mode(generators: set[str]) -> str:
     return "placeholder"
 
 
+def _verify_genblaze_manifest(
+    storage: StorageBackend,
+    scene_id: str,
+    manifest_key: str,
+    recorded_sha256: str | None,
+) -> tuple[bool, list[str]]:
+    """Verify a stored Genblaze provenance manifest.
+
+    Checks: object exists, sha256 over stored canonical bytes matches the
+    scene manifest record, and the SDK's own canonical hash verifies.
+    A scene that claims a Genblaze manifest but fails any check blocks the
+    release; scenes without one are not required to have it.
+    """
+    errors: list[str] = []
+    try:
+        data = storage.read_bytes_public(manifest_key)
+    except (StorageError, FileNotFoundError, OSError):
+        errors.append(f"Genblaze manifest missing for {scene_id}: {manifest_key}")
+        return False, errors
+
+    if not recorded_sha256:
+        errors.append(
+            f"Genblaze manifest for {scene_id} has no recorded sha256"
+        )
+        return False, errors
+    if sha256_hex(data) != recorded_sha256:
+        errors.append(f"Genblaze manifest hash mismatch for {scene_id}")
+        return False, errors
+
+    try:
+        from genblaze_core.models.manifest import parse_manifest
+    except ImportError:
+        errors.append(
+            f"Genblaze SDK not installed but release contains a Genblaze "
+            f"manifest for {scene_id}. Install requirements-genblaze.txt "
+            f"to verify provenance."
+        )
+        return False, errors
+
+    try:
+        manifest = parse_manifest(json.loads(data))
+    except Exception:
+        errors.append(f"Genblaze manifest for {scene_id} is corrupted or invalid")
+        return False, errors
+    if not manifest.verify_hash():
+        errors.append(
+            f"Genblaze manifest canonical hash verification failed for {scene_id}"
+        )
+        return False, errors
+
+    return True, errors
+
+
 def _verify_asset_entry(
     storage: StorageBackend, raw: dict
 ) -> tuple[VerifiedAssetEntry, list[str], bool]:
@@ -152,6 +205,17 @@ def _verify_scene_media(
         )
 
     genblaze_run_id = manifest.get("genblaze_run_id")
+    genblaze_manifest_key = manifest.get("genblaze_manifest_key")
+    genblaze_manifest_sha256 = manifest.get("genblaze_manifest_sha256")
+    genblaze_manifest_verified: bool | None = None
+    if genblaze_manifest_key:
+        genblaze_manifest_verified, gb_errors = _verify_genblaze_manifest(
+            storage, scene.scene_id, genblaze_manifest_key, genblaze_manifest_sha256
+        )
+        errors.extend(gb_errors)
+        if not genblaze_manifest_verified:
+            all_hashes_ok = False
+
     raw_assets = manifest.get("assets", {})
     scene_assets_invalid = False
 
@@ -185,6 +249,9 @@ def _verify_scene_media(
             media_mode=_scene_media_mode(generators),
             assets=assets,
             scene_manifest_key=manifest_public,
+            genblaze_manifest_key=genblaze_manifest_key,
+            genblaze_manifest_sha256=genblaze_manifest_sha256,
+            genblaze_manifest_verified=genblaze_manifest_verified,
             verification_errors=errors,
         ),
         errors,
@@ -227,15 +294,23 @@ def _build_genblaze_provenance(
     scenes: list[ReleaseSceneRecord], run_ids: list[str | None]
 ) -> GenblazeProvenance:
     asset_count = 0
+    manifest_keys: list[str] = []
+    manifest_hashes: list[str] = []
     for scene in scenes:
         for role in ASSET_ROLES:
             asset = getattr(scene.assets, role)
             if asset and asset.generator == "genblaze":
                 asset_count += 1
+        if scene.genblaze_manifest_key:
+            manifest_keys.append(scene.genblaze_manifest_key)
+            if scene.genblaze_manifest_sha256:
+                manifest_hashes.append(scene.genblaze_manifest_sha256)
     deduped = sorted({run_id for run_id in run_ids if run_id})
     return GenblazeProvenance(
-        present=asset_count > 0,
+        present=asset_count > 0 or bool(manifest_keys),
         run_ids=deduped,
+        manifest_keys=sorted(manifest_keys),
+        manifest_hashes=sorted(manifest_hashes),
         asset_count=asset_count,
     )
 

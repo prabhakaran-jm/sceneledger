@@ -56,6 +56,9 @@ class ReleaseSceneRecord(BaseModel):
     media_mode: str
     assets: ReleaseSceneAssets
     scene_manifest_key: str | None = None
+    genblaze_manifest_key: str | None = None
+    genblaze_manifest_sha256: str | None = None
+    genblaze_manifest_verified: bool | None = None
     verification_errors: list[str] = Field(default_factory=list)
 
 
@@ -68,6 +71,8 @@ class MediaModeSummary(BaseModel):
 class GenblazeProvenance(BaseModel):
     present: bool = False
     run_ids: list[str] = Field(default_factory=list)
+    manifest_keys: list[str] = Field(default_factory=list)
+    manifest_hashes: list[str] = Field(default_factory=list)
     asset_count: int = 0
 
 

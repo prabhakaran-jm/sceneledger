@@ -57,6 +57,14 @@ def scene_manifest_key(project_id: str, source_version: str, scene_id: str) -> s
     )
 
 
+def genblaze_manifest_key(
+    project_id: str, source_version: str, scene_id: str
+) -> str:
+    return project_key(
+        project_id, "genblaze", source_version, scene_id, "manifest.json"
+    )
+
+
 def _get_adapter():
     mode = get_media_mode()
     if mode == "placeholder":
@@ -83,12 +91,20 @@ def _build_manifest_payload(
     written_assets: dict[str, AssetEntry],
     genblaze_run_id: str | None,
     placeholder: bool,
+    genblaze_manifest_public_key: str | None = None,
+    genblaze_manifest_sha256: str | None = None,
+    genblaze_provider: str | None = None,
+    genblaze_model: str | None = None,
 ) -> dict:
     return {
         "status": "complete",
         "media_mode": media_mode,
         "placeholder": placeholder,
         "genblaze_run_id": genblaze_run_id,
+        "genblaze_manifest_key": genblaze_manifest_public_key,
+        "genblaze_manifest_sha256": genblaze_manifest_sha256,
+        "genblaze_provider": genblaze_provider,
+        "genblaze_model": genblaze_model,
         "assets": {
             role: entry.model_dump(mode="json")
             for role, entry in written_assets.items()
@@ -157,12 +173,32 @@ def _write_scene_media(
             playable=asset.playable,
         )
 
+    genblaze_manifest_public: str | None = None
+    genblaze_manifest_sha256: str | None = None
+    if generated.genblaze_manifest_json:
+        # Store the SDK's canonical JSON bytes exactly; our sha256 is computed
+        # over those stored bytes so re-reading and re-hashing round-trips.
+        gb_logical = genblaze_manifest_key(
+            project_id, source_version, scene.scene_id
+        )
+        genblaze_manifest_public = storage.write_bytes(
+            gb_logical,
+            generated.genblaze_manifest_json,
+            content_type="application/json",
+        )
+        genblaze_manifest_sha256 = sha256_hex(generated.genblaze_manifest_json)
+        storage_keys.append(genblaze_manifest_public)
+
     manifest_payload = _build_manifest_payload(
         media_mode=media_mode,
         storage=storage,
         written_assets=written_assets,
         genblaze_run_id=generated.genblaze_run_id,
         placeholder=generated.placeholder,
+        genblaze_manifest_public_key=genblaze_manifest_public,
+        genblaze_manifest_sha256=genblaze_manifest_sha256,
+        genblaze_provider=generated.genblaze_provider,
+        genblaze_model=generated.genblaze_model,
     )
     manifest_written = storage.write_json(manifest_key_logical, manifest_payload)
     storage_keys.append(manifest_written)

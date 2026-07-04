@@ -32,7 +32,10 @@ SceneLedger uses Backblaze B2 as an optional durable store for the same artifact
 {prefix}/projects/{project_id}/media/v1/scene-001/narration.wav
 {prefix}/projects/{project_id}/media/v1/scene-001/captions.vtt
 {prefix}/projects/{project_id}/media/v1/scene-001/scene-asset-manifest.json
+{prefix}/projects/{project_id}/genblaze/v1/scene-001/manifest.json
 ```
+
+The `genblaze/{source_version}/{scene_id}/manifest.json` object (kind: `genblaze_manifest`) is written only when Genblaze mode generates media for the scene. It is the Genblaze SDK's canonical provenance manifest, stored byte-exact — SceneLedger never rewrites it, so both SceneLedger's sha256 (recorded in `scene-asset-manifest.json`) and the SDK's own canonical hash verify against the stored bytes. Note: the SDK manifest includes generation prompts as part of provenance — avoid uploading confidential source documents to a publicly visible demo bucket.
 
 Example with default prefix:
 
@@ -83,7 +86,7 @@ The manifest is a durable evidence record that includes:
 - Source chunk hashes and scene plan linkage
 - Per-scene media assets with recorded and computed SHA-256
 - Stale scene IDs and `release_superseded_by_source_version` when a compare report exists
-- `genblaze_provenance` when any asset has `generator: "genblaze"`
+- `genblaze_provenance` (`run_ids`, `manifest_keys`, `manifest_hashes`, `asset_count`) when any asset has `generator: "genblaze"`; verify-release re-reads each stored Genblaze manifest, checks its sha256, and re-runs the SDK's canonical hash verification — a failed or missing claimed manifest blocks the release
 - `release_manifest_sha256` — canonical JSON hash of the manifest (excluding the hash field)
 
 Use `POST /verify-release` to re-read assets from storage and confirm hashes still match.
@@ -96,7 +99,7 @@ During the judge demo, expect these keys under `tenants/demo/projects/{project_i
 |------|-------------------|
 | After upload v1 | `sources/v1/source.txt`, `sources/v1/chunks.json` |
 | After plan | `plans/v1/scenes.json` |
-| After media | `media/v1/scene-*/` (storyboard, clip, narration, captions, scene-asset-manifest.json) |
+| After media | `media/v1/scene-*/` (storyboard, clip, narration, captions, scene-asset-manifest.json); in Genblaze mode also `genblaze/v1/scene-*/manifest.json` (**genblaze_manifest**) |
 | After release | `manifests/v1/release.json` (**release_manifest**) |
 | After compare | `compare/v1-v2/stale-report.json` |
 

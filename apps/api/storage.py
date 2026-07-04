@@ -65,6 +65,8 @@ def infer_object_kind(key: str) -> str:
         return "media_captions"
     if normalized.endswith("/scene-asset-manifest.json"):
         return "media_manifest"
+    if "/genblaze/" in normalized and normalized.endswith("/manifest.json"):
+        return "genblaze_manifest"
     return "other"
 
 

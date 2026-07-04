@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname, urlopen
@@ -126,11 +127,21 @@ def _read_asset_bytes(url: str, temp_root: Path, timeout: float = 30.0) -> bytes
     raise MediaConfigurationError(f"Unsupported Genblaze asset URL scheme: {scheme}")
 
 
+@dataclass(frozen=True)
+class GenblazeRunProvenance:
+    """SDK provenance captured from a pipeline run — canonical bytes, untouched."""
+
+    run_id: str | None
+    manifest_json: bytes | None
+    provider: str | None
+    model: str | None
+
+
 def _generate_genblaze_storyboard(
     scene: Scene, temp_dir: Path
-) -> tuple[GeneratedAsset, str | None]:
+) -> tuple[GeneratedAsset, GenblazeRunProvenance]:
     from genblaze_core import Modality, Pipeline
-    from genblaze_core.exceptions import ProviderError
+    from genblaze_core.exceptions import PipelineError, ProviderError
     from genblaze_openai import DalleProvider
 
     model = _image_model()
@@ -144,18 +155,12 @@ def _generate_genblaze_storyboard(
                 prompt=scene.visual_prompt,
                 modality=Modality.IMAGE,
             )
-            .run()
+            .run(raise_on_failure=True)
         )
-    except ProviderError as exc:
+    except (ProviderError, PipelineError) as exc:
         raise MediaConfigurationError(
             f"Genblaze storyboard generation failed for model {model!r}: {exc}"
         ) from exc
-
-    run_id: str | None = None
-    if getattr(result, "manifest", None) is not None:
-        run_id = getattr(result.manifest, "run_id", None) or getattr(
-            result.manifest, "id", None
-        )
 
     steps = getattr(result.run, "steps", None) or []
     if not steps:
@@ -171,6 +176,19 @@ def _generate_genblaze_storyboard(
 
     data = _read_asset_bytes(asset_url, temp_dir)
 
+    # Store the SDK's canonical JSON verbatim so its hash verification
+    # (parse_manifest(...).verify_hash()) round-trips at release time.
+    manifest_json: bytes | None = None
+    if getattr(result, "manifest", None) is not None:
+        manifest_json = result.manifest.to_canonical_json().encode("utf-8")
+
+    provenance = GenblazeRunProvenance(
+        run_id=getattr(result.run, "run_id", None),
+        manifest_json=manifest_json,
+        provider=getattr(steps[0], "provider", None),
+        model=getattr(steps[0], "model", None) or model,
+    )
+
     return (
         GeneratedAsset(
             role="storyboard",
@@ -180,7 +198,7 @@ def _generate_genblaze_storyboard(
             generator="genblaze",
             playable=True,
         ),
-        run_id,
+        provenance,
     )
 
 
@@ -193,7 +211,7 @@ class GenblazeAdapter:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            storyboard, run_id = _generate_genblaze_storyboard(scene, temp_path)
+            storyboard, provenance = _generate_genblaze_storyboard(scene, temp_path)
 
             clip_item = generate_clip_asset(scene, storyboard.data)
             narration_item = generate_narration_wav(scene)
@@ -229,6 +247,9 @@ class GenblazeAdapter:
 
             return GeneratedSceneAssets(
                 assets=assets,
-                genblaze_run_id=run_id,
+                genblaze_run_id=provenance.run_id,
                 placeholder=True,
+                genblaze_manifest_json=provenance.manifest_json,
+                genblaze_provider=provenance.provider,
+                genblaze_model=provenance.model,
             )
