@@ -33,6 +33,7 @@ import { DemoStepper } from "./components/DemoStepper";
 import { GenblazePanel } from "./components/GenblazePanel";
 import { ReleaseEvidencePanel } from "./components/ReleaseEvidencePanel";
 import { StoragePanel } from "./components/StoragePanel";
+import { Icon, Spinner, StatusBadge } from "./components/ui";
 
 function SceneCard({ scene }: { scene: Scene }) {
   const stale = scene.status === "stale";
@@ -40,7 +41,7 @@ function SceneCard({ scene }: { scene: Scene }) {
     <div className={`card scene-card${stale ? " scene-card-stale" : ""}`}>
       <h3>
         {scene.title}
-        <span className={`badge ${scene.status}`}>{scene.status}</span>
+        <StatusBadge status={scene.status} />
       </h3>
       <p className="meta">
         Chunks: {scene.source_chunk_ids.join(", ") || "none"}
@@ -300,261 +301,317 @@ export default function ProjectPage() {
   const objectList = storedObjects?.objects ?? [];
 
   return (
-    <main>
-      <p>
-        <Link href="/">← Home</Link>
-      </p>
-      <h1>SceneLedger Demo</h1>
-      <p className="subtitle">
-        Source-linked training scenes with provenance, stale detection, and
-        release evidence. Placeholder media + B2 is the recommended judging path.
-      </p>
+    <>
+      <header className="app-bar">
+        <div className="app-bar-inner">
+          <Link href="/" className="app-bar-brand">
+            <Icon name="shield" size={18} />
+            SceneLedger
+          </Link>
+          <div className="app-bar-meta">
+            <span className={`badge ${storageBackend === "b2" ? "b2" : "neutral"}`}>
+              {storageBackend === "b2" ? "Backblaze B2" : storageBackend}
+            </span>
+            <span
+              className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}
+            >
+              {mediaMode}
+            </span>
+            {apiVersion && <span>API {apiVersion}</span>}
+          </div>
+        </div>
+      </header>
 
-      <DemoStepper completion={stepCompletion} />
-
-      {project && (
-        <p className="status-bar">
-          Project: {project.project_id.slice(0, 8)}…
-          {apiVersion && ` · API ${apiVersion}`}
-          {" · "}
-          <span className={`badge ${storageBackend === "b2" ? "b2" : "current"}`}>
-            {storageBackend}
-          </span>
-          {" · "}
-          <span className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}>
-            {mediaMode}
-          </span>
-          {tenantPrefix && (
-            <>
-              {" · "}
-              prefix: <code>{tenantPrefix}</code>
-            </>
-          )}
-          {" · "}
-          versions: {project.uploaded_source_versions.join(", ") || "none"}
-          {" · "}
-          plan: {project.has_plan ? "yes" : "no"}
-          {project.latest_stale_scene_ids.length > 0 &&
-            ` · stale: ${project.latest_stale_scene_ids.join(", ")}`}
+      <main id="main-content">
+        <h1>Guided demo</h1>
+        <p className="subtitle">
+          Source-linked training scenes with provenance, stale detection, and
+          verifiable release evidence — media and manifests stored on{" "}
+          {storageBackend === "b2" ? "Backblaze B2" : "local storage"}.
         </p>
-      )}
 
-      {error && <p className="error">{error}</p>}
-      {message && <p className="message">{message}</p>}
+        <DemoStepper completion={stepCompletion} />
 
-      <div className="card step-card">
-        <h2>
-          <span className="step-badge">1</span> Project
-        </h2>
-        <div className="actions">
-          <button type="button" onClick={handleCreateProject} disabled={loading}>
-            Create Project
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleLoadDemo}
-            disabled={loading}
-          >
-            Load Warehouse Safety Demo
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleResetDemo}
-            disabled={loading}
-          >
-            Reset Demo
-          </button>
-        </div>
-        <p className="meta">{RESET_DEMO_HELPER}</p>
-      </div>
-
-      <div className="card step-card">
-        <h2>
-          <span className="step-badge">2–4</span> Source v1 · Plan · Media
-        </h2>
-        <textarea
-          value={sourceV1}
-          onChange={(e) => setSourceV1(e.target.value)}
-          aria-label="Source document v1"
-        />
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleUploadV1}
-            disabled={loading || !project}
-          >
-            Upload Source v1
-          </button>
-          <button
-            type="button"
-            onClick={handleGeneratePlan}
-            disabled={loading || !project}
-          >
-            Generate Scene Plan
-          </button>
-          <button
-            type="button"
-            onClick={handleGenerateMedia}
-            disabled={loading || !project || !project.has_plan}
-          >
-            Generate Media
-          </button>
-        </div>
-        {scenes.length > 0 && (
-          <div className="scene-grid">
-            {scenes.map((scene) => (
-              <SceneCard key={scene.scene_id} scene={scene} />
-            ))}
+        {loading && (
+          <div className="toast toast-success" role="status">
+            <Spinner />
+            <span>Working…</span>
           </div>
         )}
-      </div>
-
-      <div className="card step-card">
-        <h2>
-          <span className="step-badge">5</span> Release evidence
-        </h2>
-        <p className="meta">
-          Create a verified release manifest linking source chunks, media assets,
-          and SHA-256 hashes.
-        </p>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleRelease}
-            disabled={loading || !project}
-          >
-            Create Release Manifest
-          </button>
-          <button
-            type="button"
-            onClick={handleVerifyRelease}
-            disabled={loading || !project || !manifest}
-          >
-            Verify Release
-          </button>
-        </div>
-      </div>
-
-      {manifest && (
-        <ReleaseEvidencePanel
-          manifest={manifest}
-          verifyResult={verifyResult}
-          showRawRelease={showRawRelease}
-          onToggleRaw={() => setShowRawRelease((v) => !v)}
-        />
-      )}
-
-      <div className="card step-card">
-        <h2>
-          <span className="step-badge">6–7</span> Source v2 · Compare
-        </h2>
-        <p className="meta">{STALE_HINT}</p>
-        <textarea
-          value={sourceV2}
-          onChange={(e) => setSourceV2(e.target.value)}
-          aria-label="Source document v2"
-        />
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleUploadV2}
-            disabled={loading || !project}
-          >
-            Upload Source v2
-          </button>
-          <button
-            type="button"
-            onClick={handleCompare}
-            disabled={loading || !project}
-          >
-            Compare Source Versions
-          </button>
-        </div>
-      </div>
-
-      <div className="card step-card">
-        <h2>
-          <span className="step-badge">8</span> Recreate release evidence
-        </h2>
-        <p className="meta">
-          After compare, create release again to see warning status and
-          superseded-by v2.
-        </p>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleRelease}
-            disabled={loading || !project}
-          >
-            Create Release Manifest
-          </button>
-        </div>
-      </div>
-
-      <GenblazePanel
-        mediaMode={mediaMode}
-        hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
-        provenance={manifest?.genblaze_provenance ?? null}
-      />
-
-      <div className="card">
-        <h2>Media</h2>
-        <p className="meta">
-          Current mode:{" "}
-          <span className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}>
-            {mediaMode}
-          </span>
-        </p>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={handleRefreshMedia}
-            disabled={loading || !project}
-          >
-            Refresh Media
-          </button>
-        </div>
-        {projectMedia && projectMedia.scenes.length > 0 && (
-          <ul className="media-list">
-            {projectMedia.scenes.map((scene) => (
-              <li key={scene.scene_id} className="media-scene">
-                <strong>{scene.scene_id}</strong>
-                <span className="badge current">{scene.status}</span>
-                <span className="meta"> · mode: {scene.media_mode}</span>
-                <ul className="object-list">
-                  {(["storyboard", "clip", "narration", "captions"] as const).map(
-                    (role) => {
-                      const asset = scene.assets[role];
-                      return (
-                        <li key={role}>
-                          <code>{role}</code>
-                          <span className="meta">
-                            {" "}
-                            · {asset.generator} · sha256:{" "}
-                            {asset.sha256.slice(0, 12)}…
-                          </span>
-                        </li>
-                      );
-                    }
-                  )}
-                </ul>
-              </li>
-            ))}
-          </ul>
+        {error && (
+          <div className="toast toast-error" role="alert">
+            <Icon name="cross" size={16} />
+            <span>{error}</span>
+          </div>
         )}
-      </div>
+        {message && !loading && (
+          <div className="toast toast-success" role="status" aria-live="polite">
+            <Icon name="check" size={16} />
+            <span>{message}</span>
+          </div>
+        )}
 
-      <StoragePanel
-        storageBackend={storageBackend}
-        tenantPrefix={tenantPrefix}
-        objects={objectList}
-        recentKeys={recentKeys}
-        releaseManifestKey={releaseManifestKey}
-        onRefresh={handleRefreshObjects}
-        refreshDisabled={loading || !project}
-      />
-    </main>
+        <div className="card step-card">
+          <h2>
+            <span className="step-badge">1</span> Project
+          </h2>
+          <div className="actions">
+            <button type="button" onClick={handleCreateProject} disabled={loading}>
+              Create Project
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleLoadDemo}
+              disabled={loading}
+            >
+              Load Warehouse Safety Demo
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleResetDemo}
+              disabled={loading}
+            >
+              Reset Demo
+            </button>
+          </div>
+          <p className="helper-text">{RESET_DEMO_HELPER}</p>
+          {project && (
+            <div className="project-facts">
+              <span>
+                Project:{" "}
+                <code title={project.project_id}>
+                  {project.project_id.slice(0, 8)}…
+                </code>
+              </span>
+              {tenantPrefix && (
+                <span>
+                  prefix: <code>{tenantPrefix}</code>
+                </span>
+              )}
+              <span>
+                versions: {project.uploaded_source_versions.join(", ") || "none"}
+              </span>
+              <span>plan: {project.has_plan ? "yes" : "no"}</span>
+              {project.latest_stale_scene_ids.length > 0 && (
+                <span>
+                  <StatusBadge status="stale" />{" "}
+                  {project.latest_stale_scene_ids.join(", ")}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="card step-card">
+          <h2>
+            <span className="step-badge">2–4</span> Source v1 · Plan · Media
+          </h2>
+          <label className="field-label" htmlFor="source-v1">
+            Source document v1
+          </label>
+          <textarea
+            id="source-v1"
+            value={sourceV1}
+            onChange={(e) => setSourceV1(e.target.value)}
+          />
+          <div className="actions">
+            <button
+              type="button"
+              onClick={handleUploadV1}
+              disabled={loading || !project}
+            >
+              Upload Source v1
+            </button>
+            <button
+              type="button"
+              onClick={handleGeneratePlan}
+              disabled={loading || !project}
+            >
+              Generate Scene Plan
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerateMedia}
+              disabled={loading || !project || !project.has_plan}
+            >
+              Generate Media
+            </button>
+          </div>
+          {!project && (
+            <p className="helper-text">Create a project first (step 1).</p>
+          )}
+          {scenes.length > 0 && (
+            <div className="scene-grid">
+              {scenes.map((scene) => (
+                <SceneCard key={scene.scene_id} scene={scene} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card step-card">
+          <h2>
+            <span className="step-badge">5</span> Release evidence
+          </h2>
+          <p className="meta">
+            Create a verified release manifest linking source chunks, media
+            assets, and SHA-256 hashes.
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              onClick={handleRelease}
+              disabled={loading || !project}
+            >
+              Create Release Manifest
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleVerifyRelease}
+              disabled={loading || !project || !manifest}
+            >
+              Verify Release
+            </button>
+          </div>
+        </div>
+
+        {manifest && (
+          <ReleaseEvidencePanel
+            manifest={manifest}
+            verifyResult={verifyResult}
+            showRawRelease={showRawRelease}
+            onToggleRaw={() => setShowRawRelease((v) => !v)}
+          />
+        )}
+
+        <div className="card step-card">
+          <h2>
+            <span className="step-badge">6–7</span> Source v2 · Compare
+          </h2>
+          <p className="meta">{STALE_HINT}</p>
+          <label className="field-label" htmlFor="source-v2">
+            Source document v2
+          </label>
+          <textarea
+            id="source-v2"
+            value={sourceV2}
+            onChange={(e) => setSourceV2(e.target.value)}
+          />
+          <div className="actions">
+            <button
+              type="button"
+              onClick={handleUploadV2}
+              disabled={loading || !project}
+            >
+              Upload Source v2
+            </button>
+            <button
+              type="button"
+              onClick={handleCompare}
+              disabled={loading || !project}
+            >
+              Compare Source Versions
+            </button>
+          </div>
+        </div>
+
+        <div className="card step-card">
+          <h2>
+            <span className="step-badge">8</span> Recreate release evidence
+          </h2>
+          <p className="meta">
+            After compare, recreate the release: hashes still verify, but the
+            release becomes a <StatusBadge status="warning" /> because v2
+            superseded scene-003.
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              onClick={handleRelease}
+              disabled={loading || !project}
+            >
+              Recreate Release Evidence
+            </button>
+          </div>
+        </div>
+
+        <GenblazePanel
+          mediaMode={mediaMode}
+          hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
+          provenance={manifest?.genblaze_provenance ?? null}
+        />
+
+        <div className="card">
+          <h2>Media</h2>
+          <p className="meta">
+            Current mode:{" "}
+            <span
+              className={`badge ${mediaMode === "genblaze" ? "verified" : "placeholder"}`}
+            >
+              {mediaMode}
+            </span>
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleRefreshMedia}
+              disabled={loading || !project}
+            >
+              Refresh Media
+            </button>
+          </div>
+          {(!projectMedia || projectMedia.scenes.length === 0) && (
+            <p className="empty-state">
+              No media yet — generate a scene plan, then click Generate Media
+              (step 4).
+            </p>
+          )}
+          {projectMedia && projectMedia.scenes.length > 0 && (
+            <ul className="media-list">
+              {projectMedia.scenes.map((scene) => (
+                <li key={scene.scene_id} className="media-scene">
+                  <strong>{scene.scene_id}</strong>{" "}
+                  <StatusBadge status={scene.status} />
+                  <span className="meta"> · mode: {scene.media_mode}</span>
+                  <ul className="object-list">
+                    {(["storyboard", "clip", "narration", "captions"] as const).map(
+                      (role) => {
+                        const asset = scene.assets[role];
+                        return (
+                          <li key={role}>
+                            <code>{role}</code>
+                            <span className="meta">
+                              {" "}
+                              · {asset.generator} · sha256:{" "}
+                              <span title={asset.sha256}>
+                                {asset.sha256.slice(0, 12)}…
+                              </span>
+                            </span>
+                          </li>
+                        );
+                      }
+                    )}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <StoragePanel
+          storageBackend={storageBackend}
+          tenantPrefix={tenantPrefix}
+          objects={objectList}
+          recentKeys={recentKeys}
+          releaseManifestKey={releaseManifestKey}
+          onRefresh={handleRefreshObjects}
+          refreshDisabled={loading || !project}
+        />
+      </main>
+    </>
   );
 }

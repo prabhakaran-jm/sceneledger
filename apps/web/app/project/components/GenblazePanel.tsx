@@ -23,42 +23,60 @@ export function GenblazePanel({
     <div className="card genblaze-panel">
       <h2>Genblaze Integration</h2>
       <p className="meta">
-        Optional storyboard generation via the existing Genblaze adapter. Clip,
-        narration, and captions remain placeholder-generated.
+        Storyboard generation runs through the Genblaze SDK when configured.
+        Clip, narration, and captions are deterministic placeholders — not
+        AI-generated.
       </p>
-      <ul className="checklist">
-        <li>
-          media_mode:{" "}
-          <span className={`badge ${isGenblazeMode ? "verified" : "placeholder"}`}>
-            {mediaMode}
-          </span>
-        </li>
-        <li>
-          Genblaze configured:{" "}
-          {isGenblazeMode
-            ? "yes (SCENELEDGER_MEDIA_MODE=genblaze + provider keys)"
-            : "no — placeholder mode (recommended for judging)"}
-        </li>
-        <li>
-          Storyboard model: <code>gpt-image-1</code> (when genblaze mode is active)
-        </li>
-        <li>
-          Live proof in manifests:{" "}
-          {hasGenblazeAsset
-            ? 'storyboard shows generator: "genblaze"'
-            : "not yet — run Generate Media in genblaze mode"}
-        </li>
-      </ul>
+      <dl className="fact-grid">
+        <div className="fact">
+          <dt>Media mode</dt>
+          <dd>
+            <span
+              className={`badge ${isGenblazeMode ? "verified" : "placeholder"}`}
+            >
+              {mediaMode}
+            </span>
+          </dd>
+        </div>
+        <div className="fact">
+          <dt>Genblaze configured</dt>
+          <dd>
+            {isGenblazeMode
+              ? "Yes — SCENELEDGER_MEDIA_MODE=genblaze with provider keys"
+              : "No — running in deterministic placeholder mode"}
+          </dd>
+        </div>
+        <div className="fact">
+          <dt>Storyboard model</dt>
+          <dd>
+            <code>gpt-image-1</code> via genblaze-openai (when Genblaze mode is
+            active)
+          </dd>
+        </div>
+        <div className="fact">
+          <dt>Live proof in manifests</dt>
+          <dd>
+            {hasGenblazeAsset
+              ? 'Storyboard assets show generator: "genblaze"'
+              : "Not yet — run Generate Media in Genblaze mode"}
+          </dd>
+        </div>
+      </dl>
       {provenance?.present && (
         <div className="genblaze-provenance">
           <h3>Provenance manifests (stored in B2/storage)</h3>
-          <ul className="checklist">
-            <li>Genblaze-generated assets: {provenance.asset_count}</li>
+          <ul className="object-list compact-list">
+            <li>
+              <span className="meta">Genblaze-generated assets:</span>{" "}
+              {provenance.asset_count}
+            </li>
             {provenance.run_ids.length > 0 && (
               <li>
-                Run IDs:{" "}
+                <span className="meta">Run IDs:</span>{" "}
                 {provenance.run_ids.map((id) => (
-                  <code key={id}>{id.slice(0, 8)}… </code>
+                  <code key={id} title={id}>
+                    {id.slice(0, 8)}…{" "}
+                  </code>
                 ))}
               </li>
             )}
@@ -66,18 +84,19 @@ export function GenblazePanel({
               <li key={key}>
                 <code>{key}</code>
                 {provenance.manifest_hashes[i] && (
-                  <span className="meta">
+                  <span className="meta" title={provenance.manifest_hashes[i]}>
                     {" "}
-                    sha256: <code>{provenance.manifest_hashes[i].slice(0, 12)}…</code>
+                    · sha256:{" "}
+                    <code>{provenance.manifest_hashes[i].slice(0, 12)}…</code>
                   </span>
                 )}
               </li>
             ))}
           </ul>
           <p className="meta">
-            Each manifest is the Genblaze SDK&apos;s canonical run record, stored
-            byte-exact and re-verified (our sha256 + the SDK&apos;s canonical
-            hash) on every release verification.
+            Each manifest is the Genblaze SDK&apos;s canonical run record,
+            stored byte-exact and re-verified (SceneLedger&apos;s SHA-256 plus
+            the SDK&apos;s canonical hash) on every release verification.
           </p>
         </div>
       )}
