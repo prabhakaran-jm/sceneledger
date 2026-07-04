@@ -1,45 +1,53 @@
 # SceneLedger Architecture
 
-## Overview
+## M0 milestone
 
-SceneLedger connects source documents to generated training video scenes. When a source changes, only scenes backed by changed chunks become stale.
+M0 proves the local **source → plan → compare → release** loop without external services.
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Next.js    │────▶│  FastAPI     │────▶│  Local storage  │
-│  apps/web   │     │  apps/api    │     │  (B2 later)     │
-└─────────────┘     └──────┬───────┘     └─────────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  Genblaze    │  (placeholder MVP)
-                    │  pipeline    │
-                    └──────────────┘
+┌─────────────┐     ┌──────────────┐     ┌──────────────────────────┐
+│  Next.js    │────▶│  FastAPI     │────▶│  .sceneledger/projects/  │
+│  apps/web   │     │  apps/api    │     │  (B2 in M1)              │
+└─────────────┘     └──────────────┘     └──────────────────────────┘
 ```
 
 ## Monorepo layout
 
 | Path | Role |
 |------|------|
-| `apps/api` | FastAPI backend: chunking, planning, stale detection, manifests |
+| `apps/api` | FastAPI: chunking, planning, stale detection, manifests |
 | `apps/web` | Next.js demo UI |
-| `packages/pipeline` | Future shared Genblaze pipeline definitions |
-| `demo/` | Sample source documents for the hackathon demo |
-| `docs/` | Architecture and runbook notes |
+| `packages/pipeline` | Future Genblaze pipeline (M2) |
+| `demo/` | Sample source documents |
+| `docs/` | Architecture and demo notes |
+
+## Local storage layout
+
+```
+.sceneledger/projects/{project_id}/
+  project.json
+  sources/{version}/source.txt
+  sources/{version}/chunks.json
+  plans/{version}/scenes.json
+  compare/{base_version}-{candidate_version}/stale-report.json
+  manifests/{version}/release.json
+```
 
 ## Core flow
 
-1. **Upload source** — plain text split into ordered chunks with SHA-256 hashes.
-2. **Plan scenes** — deterministic mock planner assigns chunks to 3 scenes.
-3. **Compare source** — re-chunk updated text; scenes referencing changed chunk hashes are marked stale.
-4. **Release** — JSON manifest lists scenes, stale IDs, and placeholder B2 / Genblaze keys.
+1. **Upload source** — split plain text into paragraph chunks with SHA-256 hashes.
+2. **Plan scenes** — deterministic mock planner maps chunk-001/002/003 to scene-001/002/003.
+3. **Compare** — load two uploaded versions; mark scenes stale when referenced chunk hashes differ.
+4. **Release** — JSON manifest with scene IDs and stale IDs from the latest matching compare report.
 
 ## Storage abstraction
 
-`storage.py` defines a `StorageBackend` interface. MVP uses `LocalFilesystemStorage` under `apps/api/data/`. Swap the factory to a B2 client without changing route handlers.
+[`apps/api/storage.py`](../apps/api/storage.py) defines a `StorageBackend` interface. M0 uses `LocalFilesystemStorage` under `.sceneledger/`. M1 swaps in a B2 client without changing route handlers.
 
-## Out of scope (MVP)
+## Out of scope (M0)
 
 - Authentication
-- Real Genblaze / provider calls
-- PostgreSQL (project state is JSON on disk)
-- FFmpeg composition
+- Database
+- Genblaze / provider calls
+- Backblaze B2
+- FFmpeg / media generation

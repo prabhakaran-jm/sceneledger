@@ -1,6 +1,6 @@
 # Demo Script
 
-~3 minute walkthrough for judges.
+~3 minute M0 walkthrough.
 
 ## Setup
 
@@ -11,19 +11,22 @@
 ## Script
 
 1. **Intro** — "SceneLedger links training video scenes to source document chunks."
-2. **Upload v1** — Click **Upload source** (pre-filled from `demo/source-v1.txt`).
-3. **Plan** — Click **Generate plan**. Show 3 scene cards, each with chunk IDs (`chunk-001`, `chunk-002`, `chunk-003`).
-4. **Explain linkage** — Scene 2 maps to `chunk-002` (equipment checklist paragraph). Scenes 1 and 3 map to `chunk-001` and `chunk-003`.
-5. **Compare v2** — Click **Compare source** (pre-filled from `demo/source-v2.txt`, one paragraph changed).
-6. **Stale result** — Only Scene 2 shows **stale**; Scenes 1 and 3 stay **current**.
-7. **Release** (optional curl):
-
-   ```bash
-   curl -X POST http://localhost:8000/projects/{project_id}/release
-   ```
-
-8. **Close** — "Next step: regenerate stale scenes via Genblaze and publish to B2."
+2. **Create Project** — click **Create Project**.
+3. **Upload v1** — click **Upload Source v1** (pre-filled from `demo/source-v1.txt`).
+4. **Plan** — click **Generate Scene Plan**. Show three scenes:
+   - Scene 1 → `chunk-001` (stop work when alarm sounds)
+   - Scene 2 → `chunk-002` (leave through nearest exit)
+   - Scene 3 → `chunk-003` (report to assembly point A)
+5. **Upload v2** — click **Upload Source v2** (paragraph 3 now says assembly point C).
+6. **Compare** — click **Compare Source Versions**.
+7. **Stale result** — Scene 3 is **stale**; Scenes 1 and 2 stay **current**.
+8. **Release** — click **Create Release Manifest**; show JSON with `stale_scene_ids: ["scene-003"]`.
+9. **Close** — "M1 adds B2 storage; M2 adds Genblaze media generation."
 
 ## Expected stale scene
 
-Only the middle paragraph changed (added "fire extinguisher tags are current"). That paragraph is `chunk-002`, which backs Scene 2.
+Only paragraph 3 changed (assembly point A → C). That paragraph is `chunk-003`, which backs Scene 3.
+
+## Backend-only alternative
+
+See the curl sequence in [`README.md`](../README.md).

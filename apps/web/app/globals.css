@@ -103,6 +103,12 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.scene-card-stale {
+  border-color: var(--stale);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .badge {
@@ -137,4 +143,19 @@ button:disabled {
   font-size: 0.9rem;
   color: var(--muted);
   margin-bottom: 1rem;
+}
+
+.message {
+  color: var(--current);
+  margin: 0.5rem 0;
+}
+
+.manifest {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }

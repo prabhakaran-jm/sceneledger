@@ -1,112 +1,148 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   compareSource,
   createProject,
+  createRelease,
   generatePlan,
+  getProject,
   uploadSource,
-  type Project,
+  type ProjectSummary,
+  type ReleaseManifest,
   type Scene,
 } from "@/lib/api";
 
-const DEMO_V1 = `Before entering the production floor, every team member must complete the daily safety briefing. Review the posted hazard map at the main entrance and confirm you are wearing required personal protective equipment including safety glasses, closed-toe shoes, and your assigned badge.
+const DEMO_V1 = `Stop work when the alarm sounds.
 
-Inspect your workstation before starting any task. Verify that emergency stop buttons are accessible, guards are in place on moving parts, and all tools are in good working condition. Report damaged equipment to your supervisor immediately and do not operate machinery until it is cleared for use.
+Leave through the nearest marked exit.
 
-If you hear the facility alarm or observe an unsafe condition, stop work immediately. Move to the nearest marked exit route without running. Gather at your department assembly point and wait for further instructions from the safety coordinator. Do not re-enter the building until an all-clear is announced.`;
+Report to assembly point A.`;
 
-const DEMO_V2 = `Before entering the production floor, every team member must complete the daily safety briefing. Review the posted hazard map at the main entrance and confirm you are wearing required personal protective equipment including safety glasses, closed-toe shoes, and your assigned badge.
+const DEMO_V2 = `Stop work when the alarm sounds.
 
-Inspect your workstation before starting any task. Verify that emergency stop buttons are accessible, guards are in place on moving parts, fire extinguisher tags are current, and all tools are in good working condition. Report damaged equipment to your supervisor immediately and do not operate machinery until it is cleared for use.
+Leave through the nearest marked exit.
 
-If you hear the facility alarm or observe an unsafe condition, stop work immediately. Move to the nearest marked exit route without running. Gather at your department assembly point and wait for further instructions from the safety coordinator. Do not re-enter the building until an all-clear is announced.`;
+Report to assembly point C.`;
 
-function SceneCard({ scene, index }: { scene: Scene; index: number }) {
+function SceneCard({ scene }: { scene: Scene }) {
+  const stale = scene.status === "stale";
   return (
-    <div className="card scene-card">
+    <div className={`card scene-card${stale ? " scene-card-stale" : ""}`}>
       <h3>
-        Scene {index + 1}: {scene.title}
+        {scene.title}
         <span className={`badge ${scene.status}`}>{scene.status}</span>
       </h3>
       <p className="meta">
         Chunks: {scene.source_chunk_ids.join(", ") || "none"}
       </p>
-      <p>{scene.narration.slice(0, 200)}…</p>
+      <p>{scene.narration}</p>
     </div>
   );
 }
 
 export default function ProjectPage() {
-  const [project, setProject] = useState<Project | null>(null);
-  const [sourceText, setSourceText] = useState(DEMO_V1);
-  const [compareText, setCompareText] = useState(DEMO_V2);
+  const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [sourceV1, setSourceV1] = useState(DEMO_V1);
+  const [sourceV2, setSourceV2] = useState(DEMO_V2);
+  const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const initProject = useCallback(async () => {
+  async function run<T>(action: () => Promise<T>): Promise<T | null> {
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
-      const created = await createProject("Demo Safety Training");
-      setProject(created);
+      return await action();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create project");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    initProject();
-  }, [initProject]);
-
-  async function handleUpload() {
-    if (!project) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const updated = await uploadSource(project.project_id, sourceText);
-      setProject(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Request failed");
+      return null;
     } finally {
       setLoading(false);
     }
   }
 
-  async function handlePlan() {
+  async function refreshProject(projectId: string) {
+    const summary = await getProject(projectId);
+    setProject(summary);
+    return summary;
+  }
+
+  async function handleCreateProject() {
+    const created = await run(() => createProject("Warehouse Safety Demo"));
+    if (created) {
+      setProject({
+        project_id: created.project_id,
+        name: created.name,
+        uploaded_source_versions: [],
+        has_plan: false,
+        latest_stale_scene_ids: [],
+      });
+      setScenes([]);
+      setManifest(null);
+      setMessage("Project created.");
+    }
+  }
+
+  async function handleUploadV1() {
     if (!project) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const updated = await generatePlan(project.project_id);
-      setProject(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Plan failed");
-    } finally {
-      setLoading(false);
+    const result = await run(() =>
+      uploadSource(project.project_id, "v1", sourceV1)
+    );
+    if (result) {
+      await refreshProject(project.project_id);
+      setScenes([]);
+      setManifest(null);
+      setMessage(`Uploaded v1 with ${result.chunks.length} chunks.`);
+    }
+  }
+
+  async function handleGeneratePlan() {
+    if (!project) return;
+    const result = await run(() => generatePlan(project.project_id, "v1"));
+    if (result) {
+      await refreshProject(project.project_id);
+      setScenes(result.scenes);
+      setManifest(null);
+      setMessage("Generated 3-scene plan.");
+    }
+  }
+
+  async function handleUploadV2() {
+    if (!project) return;
+    const result = await run(() =>
+      uploadSource(project.project_id, "v2", sourceV2)
+    );
+    if (result) {
+      await refreshProject(project.project_id);
+      setMessage(`Uploaded v2 with ${result.chunks.length} chunks.`);
     }
   }
 
   async function handleCompare() {
     if (!project) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await compareSource(project.project_id, compareText);
-      setProject({
-        ...project,
-        source_version: result.source_version,
-        chunks: result.chunks,
-        scenes: result.scenes,
-        stale_scene_ids: result.stale_scene_ids,
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Compare failed");
-    } finally {
-      setLoading(false);
+    const result = await run(() =>
+      compareSource(project.project_id, "v1", "v2")
+    );
+    if (result) {
+      await refreshProject(project.project_id);
+      setScenes(result.scenes);
+      setMessage(
+        `Compare complete. Stale: ${result.stale_scene_ids.join(", ") || "none"}.`
+      );
+    }
+  }
+
+  async function handleRelease() {
+    if (!project) return;
+    const result = await run(() => createRelease(project.project_id, "v1"));
+    if (result) {
+      setManifest(result);
+      setMessage("Release manifest created.");
     }
   }
 
@@ -117,68 +153,109 @@ export default function ProjectPage() {
       </p>
       <h1>Demo Project</h1>
       <p className="subtitle">
-        Upload source v1, generate a 3-scene plan, then compare against v2 to
-        see stale detection.
+        M0 loop: upload v1, plan scenes, upload v2, compare, release.
       </p>
 
       {project && (
         <p className="status-bar">
-          Project: {project.project_id.slice(0, 8)}… · source v
-          {project.source_version} · {project.scenes.length} scenes
-          {project.stale_scene_ids.length > 0 &&
-            ` · ${project.stale_scene_ids.length} stale`}
+          Project: {project.project_id.slice(0, 8)}… · versions:{" "}
+          {project.uploaded_source_versions.join(", ") || "none"} · plan:{" "}
+          {project.has_plan ? "yes" : "no"}
+          {project.latest_stale_scene_ids.length > 0 &&
+            ` · stale: ${project.latest_stale_scene_ids.join(", ")}`}
         </p>
       )}
 
       {error && <p className="error">{error}</p>}
+      {message && <p className="message">{message}</p>}
 
       <div className="card">
-        <h2>Source document (v1)</h2>
-        <textarea
-          value={sourceText}
-          onChange={(e) => setSourceText(e.target.value)}
-          aria-label="Source document v1"
-        />
+        <h2>Project</h2>
         <div className="actions">
-          <button type="button" onClick={handleUpload} disabled={loading || !project}>
-            Upload source
-          </button>
-          <button
-            type="button"
-            onClick={handlePlan}
-            disabled={loading || !project || !project.chunks.length}
-          >
-            Generate plan
+          <button type="button" onClick={handleCreateProject} disabled={loading}>
+            Create Project
           </button>
         </div>
       </div>
 
       <div className="card">
-        <h2>Updated source (v2)</h2>
+        <h2>Source v1</h2>
         <textarea
-          value={compareText}
-          onChange={(e) => setCompareText(e.target.value)}
+          value={sourceV1}
+          onChange={(e) => setSourceV1(e.target.value)}
+          aria-label="Source document v1"
+        />
+        <div className="actions">
+          <button
+            type="button"
+            onClick={handleUploadV1}
+            disabled={loading || !project}
+          >
+            Upload Source v1
+          </button>
+          <button
+            type="button"
+            onClick={handleGeneratePlan}
+            disabled={loading || !project}
+          >
+            Generate Scene Plan
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Source v2</h2>
+        <textarea
+          value={sourceV2}
+          onChange={(e) => setSourceV2(e.target.value)}
           aria-label="Source document v2"
         />
         <div className="actions">
           <button
             type="button"
-            onClick={handleCompare}
-            disabled={loading || !project || !project.scenes.length}
+            onClick={handleUploadV2}
+            disabled={loading || !project}
           >
-            Compare source
+            Upload Source v2
+          </button>
+          <button
+            type="button"
+            onClick={handleCompare}
+            disabled={loading || !project}
+          >
+            Compare Source Versions
           </button>
         </div>
       </div>
 
-      {project && project.scenes.length > 0 && (
+      <div className="card">
+        <h2>Release</h2>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={handleRelease}
+            disabled={loading || !project}
+          >
+            Create Release Manifest
+          </button>
+        </div>
+      </div>
+
+      {scenes.length > 0 && (
         <section>
           <h2>Scenes</h2>
           <div className="scene-grid">
-            {project.scenes.map((scene, index) => (
-              <SceneCard key={scene.scene_id} scene={scene} index={index} />
+            {scenes.map((scene) => (
+              <SceneCard key={scene.scene_id} scene={scene} />
             ))}
           </div>
+        </section>
+      )}
+
+      {manifest && (
+        <section>
+          <h2>Release Manifest</h2>
+          <pre className="manifest">{JSON.stringify(manifest, null, 2)}</pre>
         </section>
       )}
     </main>

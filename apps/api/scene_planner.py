@@ -3,50 +3,32 @@
 from models import Scene, SourceChunk
 
 
-def _scene_titles() -> list[str]:
-    return [
-        "Opening overview",
-        "Core procedure",
-        "Wrap-up and next steps",
-    ]
+def _chunk_for_scene(chunks: list[SourceChunk], index: int) -> SourceChunk:
+    if not chunks:
+        raise ValueError("Cannot plan scenes without source chunks")
+    if index < len(chunks):
+        return chunks[index]
+    return chunks[-1]
 
 
 def plan_scenes(chunks: list[SourceChunk]) -> list[Scene]:
     if not chunks:
         return []
 
-    chunk_ids = [chunk.chunk_id for chunk in chunks]
-    assignments: list[list[str]] = []
-
-    if len(chunk_ids) >= 3:
-        assignments = [
-            [chunk_ids[0]],
-            [chunk_ids[1]],
-            chunk_ids[2:],
-        ]
-    elif len(chunk_ids) == 2:
-        assignments = [[chunk_ids[0]], [chunk_ids[1]], [chunk_ids[1]]]
-    else:
-        assignments = [chunk_ids[:], chunk_ids[:], chunk_ids[:]]
-
     scenes: list[Scene] = []
-    titles = _scene_titles()
     for index in range(3):
         scene_num = index + 1
-        assigned = assignments[index]
-        narration = " ".join(
-            chunk.text for chunk in chunks if chunk.chunk_id in assigned
-        )
+        chunk = _chunk_for_scene(chunks, index)
         scenes.append(
             Scene(
                 scene_id=f"scene-{scene_num:03d}",
-                title=titles[index],
-                narration=narration[:500] if narration else f"Scene {scene_num} narration placeholder.",
+                title=f"Scene {scene_num}",
+                narration=chunk.text,
                 visual_prompt=(
                     f"Training video frame for scene {scene_num}: "
-                    f"{titles[index].lower()}, professional workplace setting."
+                    f"{chunk.text[:80]}"
                 ),
-                source_chunk_ids=assigned,
+                source_chunk_ids=[chunk.chunk_id],
                 status="current",
             )
         )

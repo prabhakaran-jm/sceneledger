@@ -2,43 +2,59 @@
 
 from datetime import datetime, timezone
 
-from models import Project, ReleaseManifest
+from models import ReleaseManifestResponse, Scene, StaleReport
+from storage import StorageBackend, project_key
 
 
-def build_release_manifest(project: Project) -> ReleaseManifest:
-    scene_ids = [scene.scene_id for scene in project.scenes]
-    stale_ids = list(project.stale_scene_ids)
+def _report_generated_at(report: StaleReport) -> datetime:
+    return report.generated_at
 
-    placeholder_b2_keys = [
-        f"projects/{project.project_id}/sources/v{project.source_version}/source.txt",
-        f"projects/{project.project_id}/manifests/release-v{project.source_version}.json",
-    ]
-    for scene in project.scenes:
-        placeholder_b2_keys.extend(
-            [
-                f"projects/{project.project_id}/scenes/{scene.scene_id}/video.mp4",
-                f"projects/{project.project_id}/scenes/{scene.scene_id}/narration.mp3",
-                f"projects/{project.project_id}/scenes/{scene.scene_id}/captions.vtt",
-            ]
-        )
 
-    return ReleaseManifest(
-        project_id=project.project_id,
-        source_version=project.source_version,
+def find_latest_stale_report(
+    storage: StorageBackend,
+    project_id: str,
+    base_version: str | None = None,
+) -> StaleReport | None:
+    prefix = project_key(project_id, "compare")
+    keys = storage.list_keys(prefix)
+    report_keys = [k for k in keys if k.endswith("stale-report.json")]
+
+    candidates: list[tuple[datetime, StaleReport]] = []
+    for key in report_keys:
+        data = storage.read_json(key)
+        report = StaleReport.model_validate(data)
+        if base_version is not None and report.base_version != base_version:
+            continue
+        candidates.append((_report_generated_at(report), report))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def build_release_manifest(
+    storage: StorageBackend,
+    project_id: str,
+    source_version: str,
+    scenes: list[Scene],
+) -> ReleaseManifestResponse:
+    scene_ids = [scene.scene_id for scene in scenes]
+    latest_report = find_latest_stale_report(storage, project_id, base_version=source_version)
+    stale_ids = list(latest_report.stale_scene_ids) if latest_report else []
+
+    return ReleaseManifestResponse(
+        project_id=project_id,
+        source_version=source_version,
         scene_ids=scene_ids,
         stale_scene_ids=stale_ids,
         generated_at=datetime.now(timezone.utc),
-        placeholder_genblaze_manifest={
-            "pipeline": "sceneledger-mvp",
-            "status": "placeholder",
-            "steps": [
-                "storyboard",
-                "video",
-                "narration",
-                "captions",
-                "compose",
-            ],
-            "note": "Genblaze orchestration not wired in MVP scaffold",
-        },
-        placeholder_b2_keys=placeholder_b2_keys,
+        placeholder_genblaze_manifest=True,
+        placeholder_b2_keys=[],
     )
+
+
+def latest_stale_scene_ids(storage: StorageBackend, project_id: str) -> list[str]:
+    report = find_latest_stale_report(storage, project_id, base_version=None)
+    return list(report.stale_scene_ids) if report else []

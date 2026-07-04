@@ -2,28 +2,7 @@
 
 SceneLedger turns changing source documents into source-linked training videos.
 
-It generates short training scenes from a source document, records which source chunks support each scene, detects when the source changes, and regenerates only the scenes that became stale.
-
-## What it does
-
-- Upload a procedure, policy, manual, or product guide
-- Split the source into stable chunks
-- Generate a source-linked scene plan
-- Create storyboard frames, video clips, narration, and captions (planned via Genblaze)
-- Store generated media, metadata, logs, and manifests in Backblaze B2 (planned)
-- Detect stale scenes when the source document changes
-- Produce a verified final release package
-
-## Hackathon
-
-Built for the Backblaze Generative Media Hackathon.
-
-## Tech stack
-
-- Frontend: Next.js (`apps/web`)
-- Backend: FastAPI (`apps/api`)
-- Media pipeline: Genblaze (placeholder in MVP)
-- Storage: local filesystem now, Backblaze B2 later
+**M0** proves the local loop: chunk a source, plan three scenes, detect stale scenes when the source changes, and produce a release manifest. No B2, Genblaze, database, auth, or real media generation yet.
 
 ## Quick start
 
@@ -50,6 +29,8 @@ uvicorn main:app --reload --port 8000
 
 API docs: http://localhost:8000/docs
 
+Project data is stored under `.sceneledger/projects/` at the repo root.
+
 ### Frontend
 
 ```bash
@@ -60,19 +41,81 @@ npm run dev
 
 Open http://localhost:3000
 
-Optional: set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `apps/web/.env.local` if the API runs elsewhere.
+Optional: `NEXT_PUBLIC_API_URL=http://localhost:8000` in `apps/web/.env.local`
 
-### Demo flow
+## M0 demo flow (UI)
 
 1. Open http://localhost:3000/project
-2. Click **Upload source** (uses demo v1 text)
-3. Click **Generate plan** — three scenes appear with chunk IDs
-4. Click **Compare source** (uses demo v2 text with one changed paragraph)
-5. Scene 2 should show **stale**; Scenes 1 and 3 stay **current**
+2. **Create Project**
+3. **Upload Source v1** (pre-filled demo text)
+4. **Generate Scene Plan** — three scenes with chunk IDs
+5. **Upload Source v2** (only paragraph 3 changed: assembly point A → C)
+6. **Compare Source Versions** — scene-003 stale, scenes 1–2 current
+7. **Create Release Manifest** — JSON shows `stale_scene_ids: ["scene-003"]`
 
-Demo source files: `demo/source-v1.txt`, `demo/source-v2.txt`
+Demo files: [`demo/source-v1.txt`](demo/source-v1.txt), [`demo/source-v2.txt`](demo/source-v2.txt)
 
-See `docs/demo-script.md` for a full walkthrough.
+## M0 demo flow (curl)
+
+Run the API first, then:
+
+```bash
+# 1. Health
+curl http://localhost:8000/health
+
+# 2. Create project
+curl -s -X POST http://localhost:8000/projects \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Warehouse Safety Demo\"}"
+# Copy project_id from response into PROJECT_ID below
+
+PROJECT_ID="<your-project-id>"
+
+# 3. Upload source v1
+curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/sources" \
+  -H "Content-Type: application/json" \
+  -d "{\"source_version\":\"v1\",\"content\":\"Stop work when the alarm sounds.\n\nLeave through the nearest marked exit.\n\nReport to assembly point A.\"}"
+
+# 4. Generate scene plan
+curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/plan" \
+  -H "Content-Type: application/json" \
+  -d "{\"source_version\":\"v1\"}"
+
+# 5. Upload source v2
+curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/sources" \
+  -H "Content-Type: application/json" \
+  -d "{\"source_version\":\"v2\",\"content\":\"Stop work when the alarm sounds.\n\nLeave through the nearest marked exit.\n\nReport to assembly point C.\"}"
+
+# 6. Compare versions
+curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/compare-source" \
+  -H "Content-Type: application/json" \
+  -d "{\"base_version\":\"v1\",\"candidate_version\":\"v2\"}"
+
+# 7. Get project summary
+curl -s "http://localhost:8000/projects/${PROJECT_ID}"
+
+# 8. Create release manifest
+curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/release" \
+  -H "Content-Type: application/json" \
+  -d "{\"source_version\":\"v1\"}"
+```
+
+Expected compare result: `stale_scene_ids` is `["scene-003"]`.
+
+## What is mocked in M0
+
+- Scene planner (deterministic 3-scene mapping, no LLM)
+- Genblaze pipeline (`placeholder_genblaze_manifest: true`)
+- Backblaze B2 storage (`placeholder_b2_keys: []`)
+- Video, narration, captions, and media generation
+
+## Roadmap
+
+| Milestone | Scope |
+|-----------|--------|
+| **M0** (current) | Local filesystem, chunking, stale detection, release manifest |
+| **M1** | Backblaze B2 storage backend and real object keys |
+| **M2** | Genblaze orchestration and media generation |
 
 ## API endpoints
 
@@ -80,15 +123,11 @@ See `docs/demo-script.md` for a full walkthrough.
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | POST | `/projects` | Create project |
-| POST | `/projects/{id}/sources` | Upload source text |
-| GET | `/projects/{id}` | Get project state |
+| GET | `/projects/{id}` | Project summary |
+| POST | `/projects/{id}/sources` | Upload source version |
 | POST | `/projects/{id}/plan` | Generate 3-scene plan |
 | POST | `/projects/{id}/compare-source` | Detect stale scenes |
 | POST | `/projects/{id}/release` | Build release manifest |
-
-## Environment
-
-Copy `.env.example` to `.env` when wiring B2 and Genblaze. No real provider keys are required for the MVP scaffold.
 
 ## License
 

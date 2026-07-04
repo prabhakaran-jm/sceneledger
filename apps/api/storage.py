@@ -6,6 +6,10 @@ import json
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCENELEDGER_ROOT = REPO_ROOT / ".sceneledger"
+
+
 class StorageBackend(ABC):
     @abstractmethod
     def write_bytes(self, key: str, data: bytes) -> str:
@@ -34,7 +38,7 @@ class StorageBackend(ABC):
 
 class LocalFilesystemStorage(StorageBackend):
     def __init__(self, root: Path | None = None) -> None:
-        self.root = root or Path(__file__).resolve().parent / "data"
+        self.root = root or SCENELEDGER_ROOT
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
@@ -72,10 +76,9 @@ class LocalFilesystemStorage(StorageBackend):
 
 
 def project_key(project_id: str, *parts: str) -> str:
-    segments = [project_id, *parts]
-    return "/".join(segments)
+    return "/".join(["projects", project_id, *parts])
 
 
 def get_storage() -> StorageBackend:
-    """Factory for the active storage backend (local for MVP)."""
+    """Factory for the active storage backend (local for M0)."""
     return LocalFilesystemStorage()

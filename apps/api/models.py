@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -8,8 +7,8 @@ class SourceChunk(BaseModel):
     chunk_id: str
     order: int
     text: str
-    hash: str
-    source_version: int
+    sha256: str
+    source_version: str
 
 
 class Scene(BaseModel):
@@ -21,42 +20,80 @@ class Scene(BaseModel):
     status: str = "current"
 
 
-class Project(BaseModel):
+class ProjectState(BaseModel):
     project_id: str
     name: str
-    created_at: datetime
-    source_version: int = 0
-    chunks: list[SourceChunk] = Field(default_factory=list)
-    scenes: list[Scene] = Field(default_factory=list)
-    stale_scene_ids: list[str] = Field(default_factory=list)
 
 
 class CreateProjectRequest(BaseModel):
     name: str
 
 
+class CreateProjectResponse(BaseModel):
+    project_id: str
+    name: str
+
+
 class UploadSourceRequest(BaseModel):
-    text: str
-    source_version: int | None = None
+    source_version: str
+    content: str
 
 
-class CompareSourceRequest(BaseModel):
-    text: str
-
-
-class CompareSourceResponse(BaseModel):
-    scenes: list[Scene]
-    stale_scenes: list[Scene]
-    stale_scene_ids: list[str]
-    source_version: int
+class UploadSourceResponse(BaseModel):
+    project_id: str
+    source_version: str
     chunks: list[SourceChunk]
 
 
-class ReleaseManifest(BaseModel):
+class PlanRequest(BaseModel):
+    source_version: str
+
+
+class PlanResponse(BaseModel):
     project_id: str
-    source_version: int
+    source_version: str
+    scenes: list[Scene]
+
+
+class CompareSourceRequest(BaseModel):
+    base_version: str
+    candidate_version: str
+
+
+class CompareSourceResponse(BaseModel):
+    project_id: str
+    base_version: str
+    candidate_version: str
+    stale_scene_ids: list[str]
+    scenes: list[Scene]
+
+
+class StaleReport(BaseModel):
+    project_id: str
+    base_version: str
+    candidate_version: str
+    stale_scene_ids: list[str]
+    scenes: list[Scene]
+    generated_at: datetime
+
+
+class ReleaseRequest(BaseModel):
+    source_version: str
+
+
+class ReleaseManifestResponse(BaseModel):
+    project_id: str
+    source_version: str
     scene_ids: list[str]
     stale_scene_ids: list[str]
     generated_at: datetime
-    placeholder_genblaze_manifest: dict[str, Any]
-    placeholder_b2_keys: list[str]
+    placeholder_genblaze_manifest: bool = True
+    placeholder_b2_keys: list[str] = Field(default_factory=list)
+
+
+class GetProjectResponse(BaseModel):
+    project_id: str
+    name: str
+    uploaded_source_versions: list[str]
+    has_plan: bool
+    latest_stale_scene_ids: list[str]
