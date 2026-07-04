@@ -59,13 +59,14 @@ def infer_object_kind(key: str) -> str:
         return "media_clip"
     if normalized.endswith("/clip.placeholder.txt"):
         return "media_clip_placeholder"
-    if normalized.endswith("/narration.wav"):
+    if normalized.endswith("/narration.wav") or normalized.endswith("/narration.mp3"):
         return "media_narration"
     if normalized.endswith("/captions.vtt"):
         return "media_captions"
     if normalized.endswith("/scene-asset-manifest.json"):
         return "media_manifest"
-    if "/genblaze/" in normalized and normalized.endswith("/manifest.json"):
+    # Covers scene manifest.json, tts-manifest.json, and planner/manifest.json.
+    if "/genblaze/" in normalized and normalized.endswith("manifest.json"):
         return "genblaze_manifest"
     return "other"
 

@@ -32,10 +32,12 @@ SceneLedger uses Backblaze B2 as an optional durable store for the same artifact
 {prefix}/projects/{project_id}/media/v1/scene-001/narration.wav
 {prefix}/projects/{project_id}/media/v1/scene-001/captions.vtt
 {prefix}/projects/{project_id}/media/v1/scene-001/scene-asset-manifest.json
+{prefix}/projects/{project_id}/genblaze/v1/planner/manifest.json
 {prefix}/projects/{project_id}/genblaze/v1/scene-001/manifest.json
+{prefix}/projects/{project_id}/genblaze/v1/scene-001/tts-manifest.json
 ```
 
-The `genblaze/{source_version}/{scene_id}/manifest.json` object (kind: `genblaze_manifest`) is written only when Genblaze mode generates media for the scene. It is the Genblaze SDK's canonical provenance manifest, stored byte-exact — SceneLedger never rewrites it, so both SceneLedger's sha256 (recorded in `scene-asset-manifest.json`) and the SDK's own canonical hash verify against the stored bytes. Note: the SDK manifest includes generation prompts as part of provenance — avoid uploading confidential source documents to a publicly visible demo bucket.
+The `genblaze/` objects (kind: `genblaze_manifest`) are written only when Genblaze mode runs: `planner/manifest.json` for the chat scene-planning run, `{scene_id}/manifest.json` for the storyboard run, and `{scene_id}/tts-manifest.json` for the TTS narration run. In Genblaze mode `narration.mp3` replaces `narration.wav`. It is the Genblaze SDK's canonical provenance manifest, stored byte-exact — SceneLedger never rewrites it, so both SceneLedger's sha256 (recorded in `scene-asset-manifest.json`) and the SDK's own canonical hash verify against the stored bytes. Note: the SDK manifest includes generation prompts as part of provenance — avoid uploading confidential source documents to a publicly visible demo bucket.
 
 Example with default prefix:
 

@@ -23,9 +23,29 @@ projects/{project_id}/media/{source_version}/{scene_id}/
 
 Each manifest includes `status: "complete"`, `media_mode`, and per-asset metadata (`sha256`, `content_type`, `generator`, `playable`).
 
-## Genblaze pipeline (partial M2 scope)
+## Genblaze pipeline
 
-When configured, Genblaze generates the **storyboard** via documented APIs:
+When configured, Genblaze mediates **three** generation steps:
+
+### 1. Scene planning (chat)
+
+```python
+from genblaze_openai import chat
+
+chat("gpt-4o-mini", prompt=chunk_text, system=PLANNER_PROMPT,
+     response_format=ScenePlanOutput)  # strict JSON schema
+```
+
+The LLM writes scene titles, narration, and visual prompts. Output is
+strictly validated: exactly 3 scenes, every scene must reference existing
+`source_chunk_ids` in the same 1:1 order the deterministic planner uses
+(scene-00N ↔ chunk-00N), and no source-free scenes. Invalid output falls
+back to the deterministic planner with the reason recorded in the plan
+(`planner_fallback_reason`). Because `chat()` sits outside the SDK Pipeline,
+the run is recorded with the SDK's own `Run`/`Step`/`Manifest.from_run`
+models — the stored manifest hash-verifies with `parse_manifest()`.
+
+### 2. Storyboard (image)
 
 ```python
 from genblaze_core import Pipeline, Modality
@@ -36,10 +56,43 @@ Pipeline(f"sceneledger-{scene_id}").step(
     model="gpt-image-1",
     prompt=scene.visual_prompt,
     modality=Modality.IMAGE,
-).run()
+).run(raise_on_failure=True)
 ```
 
-Clip, narration, and captions remain placeholder-generated until provider keys and adapters are wired. Manifests mark each asset's `generator` honestly (`genblaze` vs `placeholder`).
+### 3. Narration (TTS)
+
+```python
+from genblaze_openai import OpenAITTSProvider
+
+Pipeline(f"sceneledger-{scene_id}-tts").step(
+    OpenAITTSProvider(output_dir=temp_dir),
+    model="gpt-4o-mini-tts",   # SCENELEDGER_GENBLAZE_TTS_MODEL
+    prompt=scene.narration,
+    modality=Modality.AUDIO,
+    voice="alloy",             # SCENELEDGER_GENBLAZE_TTS_VOICE
+    response_format="mp3",
+).run(raise_on_failure=True)
+```
+
+Narration is written as `narration.mp3` with `generator: "genblaze"` **only
+when TTS actually succeeded**; any failure falls back to the placeholder
+`narration.wav` marked `generator: "placeholder"`. Clips and captions remain
+placeholder-generated. Manifests mark each asset's `generator` honestly.
+
+### Provenance manifests
+
+Every Genblaze run's canonical SDK manifest is stored byte-exact:
+
+```
+projects/{project_id}/genblaze/{source_version}/planner/manifest.json
+projects/{project_id}/genblaze/{source_version}/{scene_id}/manifest.json      # storyboard
+projects/{project_id}/genblaze/{source_version}/{scene_id}/tts-manifest.json  # narration
+```
+
+`verify-release` re-reads each claimed manifest, checks SceneLedger's
+recorded SHA-256 over the stored bytes, and re-runs the SDK's canonical hash
+verification. A claimed-but-missing, corrupted, or tampered manifest blocks
+the release; scenes/plans without one are not required to have it.
 
 ### Asset read rules
 
@@ -73,15 +126,16 @@ pip install -r requirements-genblaze.txt
 M3 consumes M2 scene manifests honestly and embeds them in the release manifest:
 
 - Each scene's `scene-asset-manifest.json` is loaded and asset bytes are re-hashed
-- `genblaze_provenance` summarizes Genblaze run IDs and asset counts when present
+- `genblaze_provenance` summarizes Genblaze run IDs, stored manifest keys/hashes (planner, storyboard, TTS), and asset counts when present
+- `planner_provenance` records which planner produced the plan, any fallback reason, and planner-manifest verification
 - `placeholder_genblaze_manifest` remains for backward compatibility (true when no Genblaze assets)
 - Release status reflects stale scenes (`warning`) or hash/asset problems (`blocked`)
 
 Final stitched video is **M5 (future)** — M3/M4 verify per-scene assets only.
 
-## Judging recommendation (M4)
+## Modes
 
-- **Primary path:** `SCENELEDGER_MEDIA_MODE=placeholder` — deterministic, no API keys, reliable for demos
-- **Optional path:** `SCENELEDGER_MEDIA_MODE=genblaze` — real storyboard via `gpt-image-1` when `OPENAI_API_KEY` and `requirements-genblaze.txt` are configured
-- The Genblaze Integration panel in the UI shows `media_mode`, configured status, and whether any manifest has `generator: "genblaze"`
+- **Genblaze:** `SCENELEDGER_MEDIA_MODE=genblaze` with `OPENAI_API_KEY` and `requirements-genblaze.txt` installed — AI scene plan via chat, `gpt-image-1` storyboards, `gpt-4o-mini-tts` narration, with SDK provenance manifests stored and verified in B2
+- **Placeholder:** `SCENELEDGER_MEDIA_MODE=placeholder` — deterministic assets, no provider keys, so the provenance and B2 workflow can be tested offline
+- The Genblaze Integration panel in the UI shows `media_mode`, configured status, planner used, and whether any manifest has `generator: "genblaze"`
 - SceneLedger **never fakes** Genblaze output

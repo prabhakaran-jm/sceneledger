@@ -36,6 +36,11 @@ class GeneratedSceneAssets:
     genblaze_manifest_json: bytes | None = None
     genblaze_provider: str | None = None
     genblaze_model: str | None = None
+    # TTS narration provenance — set only when OpenAITTSProvider succeeded.
+    genblaze_tts_manifest_json: bytes | None = None
+    genblaze_tts_run_id: str | None = None
+    genblaze_tts_model: str | None = None
+    genblaze_tts_voice: str | None = None
 
 
 class SceneMediaGenerator(Protocol):

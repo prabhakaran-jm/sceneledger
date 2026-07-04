@@ -35,7 +35,9 @@ from release_manifest import (
     run_verify_release,
 )
 from release_models import ReleaseManifestResponse, VerifyReleaseRequest, VerifyReleaseResponse
-from scene_planner import plan_scenes
+from genblaze_planner import plan_scenes_with_planner
+from media_pipeline import genblaze_planner_manifest_key
+from media_placeholders import sha256_hex
 from source_chunks import chunk_source_text
 from stale_detector import compare_scenes
 from storage import B2Storage, StorageError, get_storage, project_key
@@ -232,21 +234,58 @@ def upload_source(project_id: str, body: UploadSourceRequest) -> UploadSourceRes
 def generate_plan(project_id: str, body: PlanRequest) -> PlanResponse:
     _load_project_state(project_id)
     chunks = _load_chunks(project_id, body.source_version)
-    scenes = plan_scenes(chunks)
+
+    plan_logical = _plan_key(project_id, body.source_version)
+    result = plan_scenes_with_planner(
+        chunks,
+        plan_asset_url=f"sceneledger://{storage.public_key(plan_logical)}",
+    )
+
+    storage_keys: list[str] = []
+    planner_manifest_public: str | None = None
+    planner_manifest_sha256: str | None = None
+    if result.manifest_json:
+        # Store the SDK's canonical manifest bytes exactly (never rewritten).
+        planner_manifest_public = storage.write_bytes(
+            genblaze_planner_manifest_key(project_id, body.source_version),
+            result.manifest_json,
+            content_type="application/json",
+        )
+        planner_manifest_sha256 = sha256_hex(result.manifest_json)
+        storage_keys.append(planner_manifest_public)
 
     plan_key = storage.write_json(
-        _plan_key(project_id, body.source_version),
+        plan_logical,
         {
             "source_version": body.source_version,
-            "scenes": [scene.model_dump(mode="json") for scene in scenes],
+            "planner": result.planner,
+            "planner_fallback_reason": result.fallback_reason,
+            "genblaze_planner": (
+                {
+                    "manifest_key": planner_manifest_public,
+                    "manifest_sha256": planner_manifest_sha256,
+                    "run_id": result.run_id,
+                    "model": result.model,
+                }
+                if planner_manifest_public
+                else None
+            ),
+            "scenes": [scene.model_dump(mode="json") for scene in result.scenes],
         },
     )
+    storage_keys.append(plan_key)
 
     return PlanResponse(
         project_id=project_id,
         source_version=body.source_version,
-        scenes=scenes,
-        storage_keys=[plan_key],
+        scenes=result.scenes,
+        storage_keys=storage_keys,
+        planner=result.planner,
+        planner_fallback_reason=result.fallback_reason,
+        genblaze_planner_manifest_key=planner_manifest_public,
+        genblaze_planner_manifest_sha256=planner_manifest_sha256,
+        genblaze_planner_run_id=result.run_id,
+        genblaze_planner_model=result.model,
     )
 
 
