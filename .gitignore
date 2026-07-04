@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# SceneLedger local data
+.sceneledger/
+apps/api/data/
+apps/web/node_modules/
+apps/web/.next/
+node_modules/
+.cursor/

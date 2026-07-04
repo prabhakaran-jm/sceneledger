@@ -1,0 +1,5 @@
+Stop work when the alarm sounds.
+
+Leave through the nearest marked exit.
+
+Report to assembly point C.
