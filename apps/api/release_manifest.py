@@ -16,7 +16,7 @@ def find_latest_stale_report(
     base_version: str | None = None,
 ) -> StaleReport | None:
     prefix = project_key(project_id, "compare")
-    keys = storage.list_keys(prefix)
+    keys = storage.list_prefix(prefix)
     report_keys = [k for k in keys if k.endswith("stale-report.json")]
 
     candidates: list[tuple[datetime, StaleReport]] = []
