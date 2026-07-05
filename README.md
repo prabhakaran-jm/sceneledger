@@ -207,10 +207,7 @@ curl https://your-api.example.com/health
 
 | Doc | Purpose |
 |-----|---------|
-| [`docs/demo-script.md`](docs/demo-script.md) | 3-minute judge demo script |
-| [`docs/devpost.md`](docs/devpost.md) | Devpost submission copy |
 | [`docs/deployment.md`](docs/deployment.md) | Hosting, env vars, smoke test |
-| [`docs/final-checklist.md`](docs/final-checklist.md) | Submission checklist |
 | [`docs/architecture.md`](docs/architecture.md) | System overview |
 | [`docs/b2-layout.md`](docs/b2-layout.md) | B2 object key map |
 | [`docs/genblaze-pipeline.md`](docs/genblaze-pipeline.md) | Genblaze integration details |
