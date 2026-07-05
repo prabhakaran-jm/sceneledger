@@ -4,7 +4,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -38,11 +38,12 @@ from release_models import ReleaseManifestResponse, VerifyReleaseRequest, Verify
 from genblaze_planner import plan_scenes_with_planner
 from media_pipeline import genblaze_planner_manifest_key
 from media_placeholders import sha256_hex
+from release_video import maybe_stitch_final_video
 from source_chunks import chunk_source_text
 from stale_detector import compare_scenes
 from storage import B2Storage, StorageError, get_storage, project_key
 
-APP_VERSION = "0.5.0-m4"
+APP_VERSION = "0.7.0"
 
 app = FastAPI(title="SceneLedger API", version=APP_VERSION)
 
@@ -335,6 +336,9 @@ def create_release(project_id: str, body: ReleaseRequest) -> ReleaseManifestResp
     chunks = _load_chunks(project_id, body.source_version)
     scenes = _load_scenes(project_id, body.source_version)
 
+    # Optional final.mp4 — records a clean skip reason instead of failing.
+    maybe_stitch_final_video(storage, project_id, body.source_version, scenes)
+
     manifest = create_release_manifest(
         storage, project_id, body.source_version, chunks, scenes
     )
@@ -400,6 +404,40 @@ def generate_media(
         if "Unknown scene IDs" in str(exc):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         raise
+
+
+_ASSET_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".mp4": "video/mp4",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".vtt": "text/vtt",
+    ".json": "application/json",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+@app.get("/projects/{project_id}/asset")
+def get_project_asset(project_id: str, key: str) -> Response:
+    """Serve a stored object for in-browser preview (release package view).
+
+    Only objects under this project's own prefix are reachable — the key is
+    normalized through the storage backend and prefix-checked, so no
+    cross-project or path-traversal reads are possible.
+    """
+    _load_project_state(project_id)
+    try:
+        logical = storage.logical_path(key)
+    except StorageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not logical.startswith(f"projects/{project_id}/"):
+        raise HTTPException(status_code=404, detail="Object not found")
+    if not storage.exists(logical):
+        raise HTTPException(status_code=404, detail="Object not found")
+
+    suffix = "." + logical.rsplit(".", 1)[-1] if "." in logical else ""
+    content_type = _ASSET_CONTENT_TYPES.get(suffix, "application/octet-stream")
+    return Response(content=storage.read_bytes(logical), media_type=content_type)
 
 
 @app.get(

@@ -799,6 +799,72 @@ textarea:focus-visible {
   margin: 0.75rem 0;
 }
 
+/* ---------- Release package ---------- */
+
+.release-package {
+  border-top: 3px solid var(--accent);
+  box-shadow: var(--shadow-md);
+}
+
+.release-package h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.release-package h2 svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.package-scenes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.package-scene {
+  margin-bottom: 0;
+}
+
+.package-scene h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.storyboard-preview {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin: 0.5rem 0;
+}
+
+.package-scene audio {
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.final-video {
+  margin: 1rem 0;
+}
+
+.final-video video {
+  width: 100%;
+  max-width: 640px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #000;
+}
+
+@media (min-width: 768px) {
+  .package-scenes {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 /* ---------- Genblaze panel ---------- */
 
 .genblaze-panel .fact-grid {
