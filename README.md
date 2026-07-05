@@ -1,8 +1,27 @@
 # SceneLedger
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-sceneledger.vercel.app-3b82f6?style=for-the-badge)](https://sceneledger.vercel.app/project)
+[![API](https://img.shields.io/badge/API-0.7.0-009688?style=for-the-badge)](https://sceneledger-backend.onrender.com/health)
+[![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
+
 **Most AI media tools generate a video once. SceneLedger manages the media's useful lifetime: it generates source-linked training scenes with Genblaze, stores media and provenance on Backblaze B2, verifies hashes at release time, and warns when a source change makes only one scene stale.**
 
-Built for the **Backblaze Generative Media Hackathon: Build with Genblaze on B2**.
+Built for the [**Backblaze Generative Media Hackathon: Build with Genblaze on B2**](https://www.backblaze.com/company/hackathon).
+
+### Tech stack
+
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Backblaze B2](https://img.shields.io/badge/Backblaze_B2-Storage-E12437?logo=backblaze&logoColor=white)](https://www.backblaze.com/b2/cloud-storage.html)
+[![Genblaze](https://img.shields.io/badge/Genblaze-SDK-8b5cf6)](docs/genblaze-pipeline.md)
+[![GMI Cloud](https://img.shields.io/badge/GMI_Cloud-Preferred-0ea5e9)](docs/genblaze-pipeline.md)
+[![OpenAI](https://img.shields.io/badge/OpenAI-Fallback-412991?logo=openai&logoColor=white)](https://openai.com/)
+[![ffmpeg](https://img.shields.io/badge/ffmpeg-optional-007808?logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+[![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white)](https://sceneledger.vercel.app)
+[![Render](https://img.shields.io/badge/Deploy-Render-46E3B7?logo=render&logoColor=black)](https://sceneledger-backend.onrender.com)
 
 ---
 
@@ -40,7 +59,7 @@ Open the app and follow the 8-step guided demo (`/project`):
 7. **Compare versions** — only scene-003 goes stale
 8. **Recreate release evidence** — hashes still verify, release becomes `warning` (superseded by v2)
 
-Script for judges: [`docs/demo-script.md`](docs/demo-script.md). Demo files: [`demo/source-v1.txt`](demo/source-v1.txt), [`demo/source-v2.txt`](demo/source-v2.txt).
+Demo files: [`demo/source-v1.txt`](demo/source-v1.txt), [`demo/source-v2.txt`](demo/source-v2.txt). Live demo: [sceneledger.vercel.app/project](https://sceneledger.vercel.app/project).
 
 ---
 
