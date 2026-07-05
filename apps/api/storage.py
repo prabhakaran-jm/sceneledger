@@ -68,6 +68,10 @@ def infer_object_kind(key: str) -> str:
     # Covers scene manifest.json, tts-manifest.json, and planner/manifest.json.
     if "/genblaze/" in normalized and normalized.endswith("manifest.json"):
         return "genblaze_manifest"
+    if normalized.endswith("/final.mp4"):
+        return "release_final_video"
+    if normalized.endswith("/final-video.json"):
+        return "release_final_video_record"
     return "other"
 
 

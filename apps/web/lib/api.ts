@@ -1,5 +1,10 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/** URL for streaming a stored object (image/audio/video preview). */
+export function assetUrl(projectId: string, key: string) {
+  return `${API_BASE}/projects/${projectId}/asset?key=${encodeURIComponent(key)}`;
+}
+
 export type SourceChunk = {
   chunk_id: string;
   order: number;
@@ -100,6 +105,15 @@ export type ReleaseManifest = {
     asset_count: number;
   };
   planner_provenance?: PlannerProvenance | null;
+  final_video?: {
+    key: string;
+    sha256: string;
+    computed_sha256?: string | null;
+    hash_verified: boolean;
+    content_type: string;
+    playable: boolean;
+  } | null;
+  final_video_skipped_reason?: string | null;
   source: {
     version: string;
     chunk_count: number;

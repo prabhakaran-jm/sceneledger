@@ -32,6 +32,7 @@ import {
 import { DemoStepper } from "./components/DemoStepper";
 import { GenblazePanel } from "./components/GenblazePanel";
 import { ReleaseEvidencePanel } from "./components/ReleaseEvidencePanel";
+import { ReleasePackagePanel } from "./components/ReleasePackagePanel";
 import { StoragePanel } from "./components/StoragePanel";
 import { Icon, Spinner, StatusBadge } from "./components/ui";
 
@@ -481,6 +482,15 @@ export default function ProjectPage() {
             </button>
           </div>
         </div>
+
+        {manifest && (
+          <ReleasePackagePanel
+            manifest={manifest}
+            releaseManifestKey={releaseManifestKey}
+            onVerify={handleVerifyRelease}
+            verifyDisabled={loading || !project}
+          />
+        )}
 
         {manifest && (
           <ReleaseEvidencePanel

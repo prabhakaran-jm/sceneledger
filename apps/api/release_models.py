@@ -90,6 +90,15 @@ class PlannerProvenance(BaseModel):
     verification_errors: list[str] = Field(default_factory=list)
 
 
+class FinalVideoEntry(BaseModel):
+    key: str
+    sha256: str
+    computed_sha256: str | None = None
+    hash_verified: bool = False
+    content_type: str = "video/mp4"
+    playable: bool = True
+
+
 class ReleaseVerification(BaseModel):
     source_chunks_present: bool = False
     scene_plan_present: bool = True
@@ -110,6 +119,8 @@ class ReleaseManifestResponse(BaseModel):
     media_mode_summary: MediaModeSummary
     genblaze_provenance: GenblazeProvenance
     planner_provenance: PlannerProvenance = Field(default_factory=PlannerProvenance)
+    final_video: FinalVideoEntry | None = None
+    final_video_skipped_reason: str | None = None
     source: ReleaseSourceSection
     scenes: list[ReleaseSceneRecord]
     stale_scene_ids: list[str] = Field(default_factory=list)

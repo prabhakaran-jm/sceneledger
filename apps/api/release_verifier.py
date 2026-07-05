@@ -13,6 +13,7 @@ from release_models import (
     RELEASE_MESSAGE_BLOCKED,
     RELEASE_MESSAGE_VERIFIED,
     RELEASE_MESSAGE_WARNING,
+    FinalVideoEntry,
     GenblazeProvenance,
     MediaModeSummary,
     PlannerProvenance,
@@ -279,6 +280,34 @@ def _verify_scene_media(
     )
 
 
+def _verify_final_video(
+    storage: StorageBackend, project_id: str, source_version: str
+) -> tuple[FinalVideoEntry | None, str | None, bool]:
+    """Verify final.mp4 against its sidecar record when one was stitched.
+
+    A skipped final video never affects the release; a stitched-but-missing
+    or tampered final.mp4 fails verification (it is part of the evidence).
+    Returns (entry, skipped_reason, ok).
+    """
+    from release_video import load_final_video_record
+
+    record = load_final_video_record(storage, project_id, source_version)
+    if record is None:
+        return None, None, True
+    if not record.get("key"):
+        return None, record.get("skipped_reason"), True
+
+    entry = FinalVideoEntry(key=record["key"], sha256=record.get("sha256", ""))
+    try:
+        data = storage.read_bytes_public(entry.key)
+    except (StorageError, FileNotFoundError, OSError):
+        entry.hash_verified = False
+        return entry, None, False
+    entry.computed_sha256 = sha256_hex(data)
+    entry.hash_verified = entry.computed_sha256 == entry.sha256
+    return entry, None, entry.hash_verified
+
+
 def _verify_planner_provenance(
     storage: StorageBackend, project_id: str, source_version: str
 ) -> PlannerProvenance:
@@ -450,6 +479,14 @@ def build_release_evidence(
         all_hashes_ok = False
         all_errors.extend(planner_provenance.verification_errors)
 
+    final_video, final_video_skipped_reason, final_video_ok = _verify_final_video(
+        storage, project_id, source_version
+    )
+    if not final_video_ok:
+        all_hashes_ok = False
+        if final_video is not None:
+            all_errors.append(f"Final video hash mismatch: {final_video.key}")
+
     stale_scene_ids = [
         scene.scene_id for scene in scenes_for_release if scene.status == "stale"
     ]
@@ -496,6 +533,8 @@ def build_release_evidence(
         media_mode_summary=_build_media_mode_summary(scene_records),
         genblaze_provenance=genblaze_provenance,
         planner_provenance=planner_provenance,
+        final_video=final_video,
+        final_video_skipped_reason=final_video_skipped_reason,
         source=ReleaseSourceSection(
             version=source_version,
             chunk_count=len(chunks),

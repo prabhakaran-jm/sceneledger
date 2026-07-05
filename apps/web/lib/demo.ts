@@ -103,7 +103,7 @@ export const OBJECT_GROUP_LABELS: Record<ObjectGroup, string> = {
   media: "Media assets",
   media_manifest: "Media manifests",
   genblaze_manifest: "Genblaze provenance",
-  release_manifest: "Release manifest",
+  release_manifest: "Release evidence",
   other: "Other",
 };
 
@@ -123,7 +123,12 @@ export function objectKindToGroup(kind: string): ObjectGroup {
   if (MEDIA_KINDS.has(kind)) return "media";
   if (kind === "media_manifest") return "media_manifest";
   if (kind === "genblaze_manifest") return "genblaze_manifest";
-  if (kind === "release_manifest") return "release_manifest";
+  if (
+    kind === "release_manifest" ||
+    kind === "release_final_video" ||
+    kind === "release_final_video_record"
+  )
+    return "release_manifest";
   return "other";
 }
 
