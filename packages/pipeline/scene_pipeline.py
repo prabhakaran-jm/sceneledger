@@ -16,6 +16,9 @@ class GeneratedAsset:
     content_type: str
     generator: str
     playable: bool = True
+    # Which upstream ran the generation ("gmi" | "openai") and its model.
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -41,6 +44,7 @@ class GeneratedSceneAssets:
     genblaze_tts_run_id: str | None = None
     genblaze_tts_model: str | None = None
     genblaze_tts_voice: str | None = None
+    genblaze_tts_provider: str | None = None
 
 
 class SceneMediaGenerator(Protocol):

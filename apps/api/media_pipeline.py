@@ -114,6 +114,7 @@ def _build_manifest_payload(
     genblaze_tts_run_id: str | None = None,
     genblaze_tts_model: str | None = None,
     genblaze_tts_voice: str | None = None,
+    genblaze_tts_provider: str | None = None,
 ) -> dict:
     return {
         "status": "complete",
@@ -129,6 +130,7 @@ def _build_manifest_payload(
         "genblaze_tts_run_id": genblaze_tts_run_id,
         "genblaze_tts_model": genblaze_tts_model,
         "genblaze_tts_voice": genblaze_tts_voice,
+        "genblaze_tts_provider": genblaze_tts_provider,
         "assets": {
             role: entry.model_dump(mode="json")
             for role, entry in written_assets.items()
@@ -195,6 +197,8 @@ def _write_scene_media(
             content_type=asset.content_type,
             generator=asset.generator,
             playable=asset.playable,
+            provider=asset.provider,
+            model=asset.model,
         )
 
     genblaze_manifest_public: str | None = None
@@ -244,6 +248,7 @@ def _write_scene_media(
         genblaze_tts_run_id=generated.genblaze_tts_run_id,
         genblaze_tts_model=generated.genblaze_tts_model,
         genblaze_tts_voice=generated.genblaze_tts_voice,
+        genblaze_tts_provider=generated.genblaze_tts_provider,
     )
     manifest_written = storage.write_json(manifest_key_logical, manifest_payload)
     storage_keys.append(manifest_written)

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname, urlopen
 
+from genblaze_providers import gmi_tts_voice, openai_tts_voice, provider_chain
 from media_placeholders import (
     generate_captions_vtt,
     generate_clip_asset,
@@ -33,14 +34,11 @@ class MediaConfigurationError(Exception):
 def is_configured() -> bool:
     if os.getenv("SCENELEDGER_MEDIA_MODE", "placeholder").strip().lower() != "genblaze":
         return False
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        return False
     try:
         import genblaze_core  # noqa: F401
-        import genblaze_openai  # noqa: F401
     except ImportError:
         return False
-    return True
+    return bool(provider_chain("image"))
 
 
 def assert_configured() -> None:
@@ -49,32 +47,18 @@ def assert_configured() -> None:
         raise MediaConfigurationError(
             "Genblaze mode requires SCENELEDGER_MEDIA_MODE=genblaze"
         )
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        raise MediaConfigurationError(
-            "Genblaze mode requires OPENAI_API_KEY to be set"
-        )
     try:
         import genblaze_core  # noqa: F401
-        import genblaze_openai  # noqa: F401
     except ImportError as exc:
         raise MediaConfigurationError(
             "Genblaze packages not installed. "
             "Install with: pip install -r requirements-genblaze.txt"
         ) from exc
-
-
-def _image_model() -> str:
-    return os.getenv("SCENELEDGER_GENBLAZE_IMAGE_MODEL", "gpt-image-1").strip()
-
-
-def _tts_model() -> str:
-    # gpt-4o-mini-tts is in the SDK's OpenAI TTS family example slugs.
-    return os.getenv("SCENELEDGER_GENBLAZE_TTS_MODEL", "gpt-4o-mini-tts").strip()
-
-
-def _tts_voice() -> str:
-    # "alloy" is in the SDK's validated voice enum for OpenAI TTS.
-    return os.getenv("SCENELEDGER_GENBLAZE_TTS_VOICE", "alloy").strip()
+    if not provider_chain("image"):
+        raise MediaConfigurationError(
+            "Genblaze mode requires a configured provider: set GMI_API_KEY "
+            "(preferred via SCENELEDGER_GENBLAZE_PROVIDER=gmi) or OPENAI_API_KEY"
+        )
 
 
 def _file_url_to_path(url: str) -> Path:
@@ -139,37 +123,59 @@ def _read_asset_bytes(url: str, temp_root: Path, timeout: float = 30.0) -> bytes
 
 @dataclass(frozen=True)
 class GenblazeRunProvenance:
-    """SDK provenance captured from a pipeline run — canonical bytes, untouched."""
+    """SDK provenance captured from a pipeline run — canonical bytes, untouched
+    except for scrubbing signed-URL credentials (excluded from the canonical
+    hash, so the stored manifest still verifies)."""
 
     run_id: str | None
     manifest_json: bytes | None
     provider: str | None
     model: str | None
+    provider_name: str | None = None  # short name: "gmi" | "openai"
 
 
-def _generate_genblaze_storyboard(
-    scene: Scene, temp_dir: Path
-) -> tuple[GeneratedAsset, GenblazeRunProvenance]:
-    from genblaze_core import Modality, Pipeline
+@dataclass(frozen=True)
+class _PipelineOutput:
+    data: bytes
+    media_type: str | None
+    provenance: GenblazeRunProvenance
+
+
+def _run_generation_step(
+    *,
+    pipeline_name: str,
+    provider_obj,
+    provider_name: str,
+    model: str,
+    prompt: str,
+    modality,
+    temp_dir: Path,
+    **params,
+) -> _PipelineOutput:
+    """Run one Genblaze pipeline step and capture bytes + provenance.
+
+    Raises MediaConfigurationError on any failure so callers can try the
+    next provider in the chain.
+    """
+    from genblaze_core import Pipeline
+    from genblaze_core._asset_url import strip_asset_url_credentials
     from genblaze_core.exceptions import PipelineError, ProviderError
-    from genblaze_openai import DalleProvider
 
-    model = _image_model()
-    output_dir = str(temp_dir.resolve())
     try:
         result = (
-            Pipeline(f"sceneledger-{scene.scene_id}")
+            Pipeline(pipeline_name)
             .step(
-                DalleProvider(output_dir=output_dir),
+                provider_obj,
                 model=model,
-                prompt=scene.visual_prompt,
-                modality=Modality.IMAGE,
+                prompt=prompt,
+                modality=modality,
+                **params,
             )
             .run(raise_on_failure=True)
         )
     except (ProviderError, PipelineError) as exc:
         raise MediaConfigurationError(
-            f"Genblaze storyboard generation failed for model {model!r}: {exc}"
+            f"Genblaze {provider_name} generation failed for model {model!r}: {exc}"
         ) from exc
 
     steps = getattr(result.run, "steps", None) or []
@@ -178,7 +184,6 @@ def _generate_genblaze_storyboard(
     assets = getattr(steps[0], "assets", None) or []
     if not assets:
         raise MediaConfigurationError("Genblaze pipeline returned no assets")
-
     asset = assets[0]
     asset_url = getattr(asset, "url", None)
     if not asset_url:
@@ -186,98 +191,178 @@ def _generate_genblaze_storyboard(
 
     data = _read_asset_bytes(asset_url, temp_dir)
 
-    # Store the SDK's canonical JSON verbatim so its hash verification
-    # (parse_manifest(...).verify_hash()) round-trips at release time.
+    # Scrub signed-URL credentials before persisting the manifest. Asset URLs
+    # are excluded from the schema-1.5 canonical hash, so verify_hash() still
+    # round-trips on the stored bytes.
     manifest_json: bytes | None = None
     if getattr(result, "manifest", None) is not None:
+        for step in result.run.steps:
+            for run_asset in list(step.assets) + list(step.inputs):
+                url = getattr(run_asset, "url", None)
+                if url and url.startswith("http"):
+                    run_asset.url = strip_asset_url_credentials(url)
         manifest_json = result.manifest.to_canonical_json().encode("utf-8")
 
-    provenance = GenblazeRunProvenance(
-        run_id=getattr(result.run, "run_id", None),
-        manifest_json=manifest_json,
-        provider=getattr(steps[0], "provider", None),
-        model=getattr(steps[0], "model", None) or model,
+    return _PipelineOutput(
+        data=data,
+        media_type=getattr(asset, "media_type", None),
+        provenance=GenblazeRunProvenance(
+            run_id=getattr(result.run, "run_id", None),
+            manifest_json=manifest_json,
+            provider=getattr(steps[0], "provider", None),
+            model=getattr(steps[0], "model", None) or model,
+            provider_name=provider_name,
+        ),
     )
 
-    return (
-        GeneratedAsset(
-            role="storyboard",
-            filename="storyboard.png",
-            data=data,
-            content_type="image/png",
-            generator="genblaze",
-            playable=True,
+
+def _generate_genblaze_storyboard(
+    scene: Scene, temp_dir: Path
+) -> tuple[GeneratedAsset, GenblazeRunProvenance]:
+    """Generate the storyboard via the preferred provider chain (gmi → openai)."""
+    from genblaze_core import Modality
+
+    failures: list[str] = []
+    for choice in provider_chain("image"):
+        if choice.name == "gmi":
+            from genblaze_gmicloud import GMICloudImageProvider
+
+            provider_obj = GMICloudImageProvider()
+        else:
+            from genblaze_openai import DalleProvider
+
+            provider_obj = DalleProvider(output_dir=str(temp_dir.resolve()))
+
+        try:
+            output = _run_generation_step(
+                pipeline_name=f"sceneledger-{scene.scene_id}",
+                provider_obj=provider_obj,
+                provider_name=choice.name,
+                model=choice.model,
+                prompt=scene.visual_prompt,
+                modality=Modality.IMAGE,
+                temp_dir=temp_dir,
+            )
+        except MediaConfigurationError as exc:
+            failures.append(str(exc))
+            continue
+
+        is_jpeg = (output.media_type or "").lower() == "image/jpeg"
+        return (
+            GeneratedAsset(
+                role="storyboard",
+                filename="storyboard.jpg" if is_jpeg else "storyboard.png",
+                data=output.data,
+                content_type="image/jpeg" if is_jpeg else "image/png",
+                generator="genblaze",
+                playable=True,
+                provider=choice.name,
+                model=output.provenance.model,
+            ),
+            output.provenance,
+        )
+
+    raise MediaConfigurationError(
+        "Genblaze storyboard generation failed for all configured providers: "
+        + "; ".join(failures)
+    )
+
+
+def _gmi_tts_registry():
+    """Registry for GMI TTS with the prompt→text payload mapping.
+
+    GMI's TTS queue requires the input under ``text`` (and voices under
+    ``voice_id``); the SDK's stock audio family only aliases voice. Passing
+    a custom ModelRegistry is the documented override (live-verified with
+    minimax-tts-speech-2.6-turbo).
+    """
+    import re
+
+    from genblaze_core.models.enums import Modality
+    from genblaze_core.providers import ModelFamily, ModelRegistry, ModelSpec
+    from genblaze_core.providers.params import ParamSurface
+
+    surface = ParamSurface.for_modality(Modality.AUDIO).with_aliases(
+        voice="voice_id", prompt="text"
+    )
+    family = ModelFamily(
+        name="sceneledger-gmi-tts",
+        pattern=re.compile(
+            r"^(?:elevenlabs-tts|minimax-tts|inworld-tts)", re.IGNORECASE
         ),
-        provenance,
+        spec_template=ModelSpec(
+            model_id="*",
+            modality=Modality.AUDIO,
+            extras={"envelope_key": "payload", "is_music": False},
+            **surface.build(),
+        ),
+        description="SceneLedger GMI TTS family with prompt→text mapping",
+        canonical_slug=str.lower,
+    )
+    return ModelRegistry(
+        provider_families=(family,),
+        fallback=ModelSpec(model_id="*", modality=Modality.AUDIO),
     )
 
 
 def _generate_genblaze_narration(
     scene: Scene, temp_dir: Path
 ) -> tuple[GeneratedAsset, GenblazeRunProvenance]:
-    """Generate spoken narration through the Genblaze OpenAI TTS provider.
+    """Generate narration via the preferred provider chain (gmi → openai).
 
-    Raises MediaConfigurationError on any failure — the caller falls back
-    to placeholder narration and marks it honestly.
+    Raises MediaConfigurationError when every provider fails — the caller
+    falls back to placeholder narration and marks it honestly.
     """
-    from genblaze_core import Modality, Pipeline
-    from genblaze_core.exceptions import PipelineError, ProviderError
-    from genblaze_openai import OpenAITTSProvider
+    from genblaze_core import Modality
 
-    model = _tts_model()
-    voice = _tts_voice()
-    output_dir = str(temp_dir.resolve())
-    try:
-        result = (
-            Pipeline(f"sceneledger-{scene.scene_id}-tts")
-            .step(
-                OpenAITTSProvider(output_dir=output_dir),
-                model=model,
+    failures: list[str] = []
+    for choice in provider_chain("tts"):
+        if choice.name == "gmi":
+            from genblaze_gmicloud import GMICloudAudioProvider
+
+            provider_obj = GMICloudAudioProvider(models=_gmi_tts_registry())
+            # Empty voice = the model's default; GMI voice ids are model-specific.
+            voice = gmi_tts_voice()
+            params = {"voice": voice} if voice else {}
+        else:
+            from genblaze_openai import OpenAITTSProvider
+
+            provider_obj = OpenAITTSProvider(output_dir=str(temp_dir.resolve()))
+            params = {"voice": openai_tts_voice(), "response_format": "mp3"}
+
+        try:
+            output = _run_generation_step(
+                pipeline_name=f"sceneledger-{scene.scene_id}-tts",
+                provider_obj=provider_obj,
+                provider_name=choice.name,
+                model=choice.model,
                 prompt=scene.narration,
                 modality=Modality.AUDIO,
-                voice=voice,
-                response_format="mp3",
+                temp_dir=temp_dir,
+                **params,
             )
-            .run(raise_on_failure=True)
+        except MediaConfigurationError as exc:
+            failures.append(str(exc))
+            continue
+
+        is_wav = (output.media_type or "").lower() == "audio/wav"
+        return (
+            GeneratedAsset(
+                role="narration",
+                filename="narration.wav" if is_wav else "narration.mp3",
+                data=output.data,
+                content_type="audio/wav" if is_wav else "audio/mpeg",
+                generator="genblaze",
+                playable=True,
+                provider=choice.name,
+                model=output.provenance.model,
+            ),
+            output.provenance,
         )
-    except (ProviderError, PipelineError) as exc:
-        raise MediaConfigurationError(
-            f"Genblaze TTS narration failed for model {model!r}: {exc}"
-        ) from exc
 
-    steps = getattr(result.run, "steps", None) or []
-    if not steps:
-        raise MediaConfigurationError("Genblaze TTS pipeline returned no steps")
-    assets = getattr(steps[0], "assets", None) or []
-    if not assets:
-        raise MediaConfigurationError("Genblaze TTS pipeline returned no assets")
-    asset_url = getattr(assets[0], "url", None)
-    if not asset_url:
-        raise MediaConfigurationError("Genblaze TTS asset has no URL")
-
-    data = _read_asset_bytes(asset_url, temp_dir)
-
-    manifest_json: bytes | None = None
-    if getattr(result, "manifest", None) is not None:
-        manifest_json = result.manifest.to_canonical_json().encode("utf-8")
-
-    provenance = GenblazeRunProvenance(
-        run_id=getattr(result.run, "run_id", None),
-        manifest_json=manifest_json,
-        provider=getattr(steps[0], "provider", None),
-        model=getattr(steps[0], "model", None) or model,
-    )
-
-    return (
-        GeneratedAsset(
-            role="narration",
-            filename="narration.mp3",
-            data=data,
-            content_type="audio/mpeg",
-            generator="genblaze",
-            playable=True,
-        ),
-        provenance,
+    raise MediaConfigurationError(
+        "Genblaze TTS narration failed for all configured providers: "
+        + "; ".join(failures)
     )
 
 
@@ -334,6 +419,13 @@ class GenblazeAdapter:
                 ),
             ]
 
+            tts_voice = None
+            if tts_provenance:
+                tts_voice = (
+                    (gmi_tts_voice() or None)
+                    if tts_provenance.provider_name == "gmi"
+                    else openai_tts_voice()
+                )
             return GeneratedSceneAssets(
                 assets=assets,
                 genblaze_run_id=provenance.run_id,
@@ -350,7 +442,8 @@ class GenblazeAdapter:
                 genblaze_tts_model=(
                     tts_provenance.model if tts_provenance else None
                 ),
-                genblaze_tts_voice=(
-                    _tts_voice() if tts_provenance else None
+                genblaze_tts_voice=tts_voice,
+                genblaze_tts_provider=(
+                    tts_provenance.provider if tts_provenance else None
                 ),
             )

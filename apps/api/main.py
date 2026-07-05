@@ -36,6 +36,7 @@ from release_manifest import (
 )
 from release_models import ReleaseManifestResponse, VerifyReleaseRequest, VerifyReleaseResponse
 from genblaze_planner import plan_scenes_with_planner
+from genblaze_providers import preferred_provider
 from media_pipeline import genblaze_planner_manifest_key
 from media_placeholders import sha256_hex
 from release_video import maybe_stitch_final_video
@@ -168,6 +169,7 @@ def health() -> dict[str, str | None]:
         "api_version": APP_VERSION,
         "storage_backend": storage.backend_name,
         "media_mode": get_media_mode(),
+        "genblaze_provider": preferred_provider(),
         "tenant_prefix": tenant_prefix,
     }
 
@@ -267,6 +269,7 @@ def generate_plan(project_id: str, body: PlanRequest) -> PlanResponse:
                     "manifest_sha256": planner_manifest_sha256,
                     "run_id": result.run_id,
                     "model": result.model,
+                    "provider": result.provider,
                 }
                 if planner_manifest_public
                 else None
@@ -287,6 +290,7 @@ def generate_plan(project_id: str, body: PlanRequest) -> PlanResponse:
         genblaze_planner_manifest_sha256=planner_manifest_sha256,
         genblaze_planner_run_id=result.run_id,
         genblaze_planner_model=result.model,
+        genblaze_planner_provider=result.provider,
     )
 
 

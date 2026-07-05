@@ -130,6 +130,8 @@ def _verify_asset_entry(
         content_type=raw.get("content_type", ""),
         generator=raw.get("generator", "placeholder"),
         playable=bool(raw.get("playable", True)),
+        provider=raw.get("provider"),
+        model=raw.get("model"),
     )
     try:
         if not public_key or not storage.exists(storage.logical_path(public_key)):
@@ -334,6 +336,7 @@ def _verify_planner_provenance(
     provenance.genblaze_manifest_sha256 = genblaze_planner.get("manifest_sha256")
     provenance.genblaze_run_id = genblaze_planner.get("run_id")
     provenance.genblaze_model = genblaze_planner.get("model")
+    provenance.genblaze_provider = genblaze_planner.get("provider")
 
     if provenance.genblaze_manifest_key:
         verified, errors = _verify_genblaze_manifest(

@@ -12,11 +12,13 @@ type PlannerProvenance = {
   genblaze_manifest_key?: string | null;
   genblaze_manifest_verified?: boolean | null;
   genblaze_model?: string | null;
+  genblaze_provider?: string | null;
 };
 
 type GenblazePanelProps = {
   mediaMode: string;
   hasGenblazeAsset: boolean;
+  preferredProvider?: string;
   provenance?: GenblazeProvenance | null;
   plannerProvenance?: PlannerProvenance | null;
 };
@@ -24,10 +26,13 @@ type GenblazePanelProps = {
 export function GenblazePanel({
   mediaMode,
   hasGenblazeAsset,
+  preferredProvider,
   provenance,
   plannerProvenance,
 }: GenblazePanelProps) {
   const isGenblazeMode = mediaMode === "genblaze";
+  const providerLabel =
+    preferredProvider === "gmi" ? "GMI Cloud (OpenAI fallback)" : "OpenAI";
 
   return (
     <div className="card genblaze-panel">
@@ -58,11 +63,15 @@ export function GenblazePanel({
           </dd>
         </div>
         <div className="fact">
+          <dt>Preferred provider</dt>
+          <dd>{isGenblazeMode ? providerLabel : "—"}</dd>
+        </div>
+        <div className="fact">
           <dt>Scene planner</dt>
           <dd>
             {plannerProvenance
               ? plannerProvenance.planner === "genblaze-chat"
-                ? `Genblaze chat (${plannerProvenance.genblaze_model ?? "chat model"})${
+                ? `Genblaze chat via ${plannerProvenance.genblaze_provider ?? "provider"} (${plannerProvenance.genblaze_model ?? "chat model"})${
                     plannerProvenance.genblaze_manifest_verified != null
                       ? plannerProvenance.genblaze_manifest_verified
                         ? " · manifest verified"
@@ -74,17 +83,21 @@ export function GenblazePanel({
           </dd>
         </div>
         <div className="fact">
-          <dt>Storyboard model</dt>
+          <dt>Storyboard</dt>
           <dd>
-            <code>gpt-image-1</code> via genblaze-openai (when Genblaze mode is
-            active)
+            {preferredProvider === "gmi"
+              ? "GMI Cloud image queue, OpenAI gpt-image-1 fallback"
+              : "OpenAI gpt-image-1 via genblaze-openai"}{" "}
+            (when Genblaze mode is active)
           </dd>
         </div>
         <div className="fact">
           <dt>Narration (TTS)</dt>
           <dd>
-            <code>gpt-4o-mini-tts</code> via genblaze-openai when active;
-            placeholder tone otherwise, labeled honestly
+            {preferredProvider === "gmi"
+              ? "GMI Cloud TTS queue, OpenAI gpt-4o-mini-tts fallback"
+              : "OpenAI gpt-4o-mini-tts via genblaze-openai"}
+            ; placeholder tone if all providers fail, labeled honestly
           </dd>
         </div>
         <div className="fact">
