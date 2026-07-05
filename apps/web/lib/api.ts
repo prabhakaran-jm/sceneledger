@@ -47,6 +47,8 @@ export type VerifiedAssetEntry = {
   content_type: string;
   generator: string;
   playable: boolean;
+  provider?: string | null;
+  model?: string | null;
 };
 
 export type ReleaseSceneRecord = {
@@ -81,6 +83,7 @@ export type PlannerProvenance = {
   genblaze_manifest_verified?: boolean | null;
   genblaze_run_id?: string | null;
   genblaze_model?: string | null;
+  genblaze_provider?: string | null;
   verification_errors: string[];
 };
 
@@ -167,6 +170,7 @@ export type HealthResponse = {
   api_version?: string;
   storage_backend: string;
   media_mode: string;
+  genblaze_provider?: string;
   tenant_prefix?: string | null;
 };
 
@@ -176,6 +180,8 @@ export type AssetEntry = {
   content_type: string;
   generator: string;
   playable: boolean;
+  provider?: string | null;
+  model?: string | null;
 };
 
 export type SceneAssetRefs = {
@@ -281,6 +287,7 @@ export function generatePlan(projectId: string, sourceVersion: string) {
     genblaze_planner_manifest_sha256?: string | null;
     genblaze_planner_run_id?: string | null;
     genblaze_planner_model?: string | null;
+    genblaze_planner_provider?: string | null;
   }>(`/projects/${projectId}/plan`, {
     method: "POST",
     body: JSON.stringify({ source_version: sourceVersion }),

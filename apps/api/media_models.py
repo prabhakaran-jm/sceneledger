@@ -7,6 +7,8 @@ class AssetEntry(BaseModel):
     content_type: str
     generator: str
     playable: bool = True
+    provider: str | None = None  # "gmi" | "openai" for genblaze assets
+    model: str | None = None
 
 
 class SceneAssetRefs(BaseModel):

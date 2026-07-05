@@ -50,10 +50,10 @@ Script for judges: [`docs/demo-script.md`](docs/demo-script.md). Demo files: [`d
 Next.js (apps/web)  →  FastAPI (apps/api)  →  StorageBackend
                             │                     ├── B2: tenants/demo/projects/{id}/...
                             │                     └── local: .sceneledger/ (fallback)
-                            └── Genblaze SDK
-                                  ├── chat (scene planner, gpt-4o-mini)
-                                  ├── DalleProvider (storyboards, gpt-image-1)
-                                  └── OpenAITTSProvider (narration, gpt-4o-mini-tts)
+                            └── Genblaze SDK  (GMI Cloud preferred · OpenAI fallback)
+                                  ├── chat (scene planner: DeepSeek-V3.2 on GMI / gpt-4o-mini)
+                                  ├── image (storyboards: GMI image queue / gpt-image-1)
+                                  └── TTS (narration: GMI TTS queue / gpt-4o-mini-tts)
 ```
 
 Core modules: `genblaze_planner`, `genblaze_adapter`, `media_pipeline`, `release_verifier`, `stale_detector`, `release_video`. Details: [`docs/architecture.md`](docs/architecture.md).
@@ -81,13 +81,13 @@ Full key map: [`docs/b2-layout.md`](docs/b2-layout.md)
 
 ## How SceneLedger uses Genblaze
 
-Genblaze mediates **three generation steps**, each leaving a verifiable provenance trail:
+Genblaze mediates **three generation steps**, each leaving a verifiable provenance trail. **GMI Cloud is the preferred provider when configured** (`SCENELEDGER_GENBLAZE_PROVIDER=gmi` + `GMI_API_KEY`); each step falls back to OpenAI automatically, and every asset records which provider and model actually ran:
 
-| Step | Genblaze API | Output |
-|------|--------------|--------|
-| Scene planning | `genblaze_openai.chat()` with strict structured output | 3 validated, source-linked scenes |
-| Storyboards | `Pipeline` + `DalleProvider` | `storyboard.png` per scene |
-| Narration | `Pipeline` + `OpenAITTSProvider` | spoken `narration.mp3` per scene |
+| Step | Preferred (GMI Cloud) | Fallback (OpenAI) | Output |
+|------|----------------------|-------------------|--------|
+| Scene planning | `genblaze_gmicloud.chat()` — live-verified with `deepseek-ai/DeepSeek-V3.2` strict structured output | `genblaze_openai.chat()` (`gpt-4o-mini`) | 3 validated, source-linked scenes |
+| Storyboards | `GMICloudImageProvider` (image request queue) | `DalleProvider` (`gpt-image-1`) | storyboard image per scene |
+| Narration | `GMICloudAudioProvider` (TTS queue, `elevenlabs-tts-v3`) | `OpenAITTSProvider` (`gpt-4o-mini-tts`) | spoken narration per scene |
 
 Every run's canonical SDK manifest (`Manifest`, schema 1.5) is stored **byte-exact** in B2. Release verification checks both SceneLedger's SHA-256 over the stored bytes **and** the SDK's own canonical hash (`parse_manifest().verify_hash()`). A tampered or missing claimed manifest blocks the release. Assets are marked `generator: "genblaze"` only after a real provider run — SceneLedger **never fakes** Genblaze output.
 
@@ -98,10 +98,12 @@ Details: [`docs/genblaze-pipeline.md`](docs/genblaze-pipeline.md)
 | Provider | Role | Model / tech |
 |----------|------|--------------|
 | **Backblaze B2** | Durable object storage for media + provenance | S3-compatible API |
-| **Genblaze SDK** | Generation orchestration + canonical provenance manifests | `genblaze` 0.4.x |
-| **OpenAI via Genblaze** | Scene planner (chat) | `gpt-4o-mini` (`SCENELEDGER_GENBLAZE_CHAT_MODEL`) |
-| **OpenAI via Genblaze** | Storyboard images | `gpt-image-1` (`SCENELEDGER_GENBLAZE_IMAGE_MODEL`) |
-| **OpenAI via Genblaze** | TTS narration | `gpt-4o-mini-tts`, voice `alloy` (`SCENELEDGER_GENBLAZE_TTS_MODEL/VOICE`) |
+| **Genblaze SDK** | Generation orchestration + canonical provenance manifests | `genblaze` 0.4.x + `genblaze-gmicloud` + `genblaze-openai` |
+| **GMI Cloud via Genblaze** (preferred) | Scene planner (chat) | `deepseek-ai/DeepSeek-V3.2` (`SCENELEDGER_GMI_CHAT_MODEL`) |
+| **GMI Cloud via Genblaze** (preferred) | Storyboard images / TTS narration | `SCENELEDGER_GMI_IMAGE_MODEL` / `SCENELEDGER_GMI_TTS_MODEL` via GMI request queue |
+| **OpenAI via Genblaze** (fallback) | Scene planner (chat) | `gpt-4o-mini` (`SCENELEDGER_GENBLAZE_CHAT_MODEL`) |
+| **OpenAI via Genblaze** (fallback) | Storyboard images | `gpt-image-1` (`SCENELEDGER_GENBLAZE_IMAGE_MODEL`) |
+| **OpenAI via Genblaze** (fallback) | TTS narration | `gpt-4o-mini-tts`, voice `alloy` (`SCENELEDGER_GENBLAZE_TTS_MODEL/VOICE`) |
 | Placeholder generators (fallback) | Deterministic offline assets | Pillow (storyboard), ffmpeg (clip), wave (narration), VTT (captions) |
 
 ---
@@ -136,8 +138,10 @@ API docs: http://localhost:8000/docs · Health: http://localhost:8000/health
 ### 3. Genblaze setup (intended hackathon path)
 
 1. `pip install -r apps/api/requirements-genblaze.txt`
-2. Set `SCENELEDGER_MEDIA_MODE=genblaze` and `OPENAI_API_KEY` in `.env`
-3. Optional model overrides: see [`.env.example`](.env.example)
+2. Set `SCENELEDGER_MEDIA_MODE=genblaze` in `.env`
+3. **Preferred:** set `SCENELEDGER_GENBLAZE_PROVIDER=gmi` and `GMI_API_KEY`; keep `OPENAI_API_KEY` set for automatic per-step fallback
+4. **OpenAI only:** leave `SCENELEDGER_GENBLAZE_PROVIDER=openai` and set `OPENAI_API_KEY`
+5. Optional model overrides: see [`.env.example`](.env.example)
 
 ### 4. Frontend
 

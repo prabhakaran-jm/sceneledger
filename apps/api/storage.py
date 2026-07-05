@@ -53,7 +53,7 @@ def infer_object_kind(key: str) -> str:
         return "compare"
     if normalized.endswith("/release.json"):
         return "release_manifest"
-    if normalized.endswith("/storyboard.png"):
+    if normalized.endswith("/storyboard.png") or normalized.endswith("/storyboard.jpg"):
         return "media_storyboard"
     if normalized.endswith("/clip.mp4"):
         return "media_clip"

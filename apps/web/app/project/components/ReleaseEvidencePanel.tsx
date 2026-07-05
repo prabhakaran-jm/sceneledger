@@ -172,6 +172,8 @@ export function ReleaseEvidencePanel({
                           {" "}
                           · hash ok: {asset.hash_verified ? "yes" : "no"} ·{" "}
                           {asset.generator}
+                          {asset.provider ? ` · ${asset.provider}` : ""}
+                          {asset.model ? ` (${asset.model})` : ""}
                         </span>
                       </li>
                     );

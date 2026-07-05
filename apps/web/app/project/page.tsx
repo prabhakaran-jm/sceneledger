@@ -75,6 +75,7 @@ export default function ProjectPage() {
     null
   );
   const [mediaMode, setMediaMode] = useState<string>("placeholder");
+  const [genblazeProvider, setGenblazeProvider] = useState<string>("openai");
   const [projectMedia, setProjectMedia] = useState<ProjectMedia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export default function ProjectPage() {
       .then((health) => {
         setStorageBackend(health.storage_backend);
         setMediaMode(health.media_mode);
+        setGenblazeProvider(health.genblaze_provider ?? "openai");
         setTenantPrefix(health.tenant_prefix ?? null);
         setApiVersion(health.api_version ?? "");
       })
@@ -209,7 +211,7 @@ export default function ProjectPage() {
       setRecentKeys((keys) => mergeKeys(keys, result.storage_keys));
       const plannerNote =
         result.planner === "genblaze-chat"
-          ? `planned by Genblaze chat${result.genblaze_planner_model ? ` · ${result.genblaze_planner_model}` : ""}`
+          ? `planned by Genblaze chat${result.genblaze_planner_provider ? ` via ${result.genblaze_planner_provider}` : ""}${result.genblaze_planner_model ? ` · ${result.genblaze_planner_model}` : ""}`
           : `deterministic planner${result.planner_fallback_reason ? ` — ${result.planner_fallback_reason}` : ""}`;
       setMessage(`Generated 3-scene plan (${plannerNote}).`);
     }
@@ -322,6 +324,11 @@ export default function ProjectPage() {
             >
               {mediaMode}
             </span>
+            {mediaMode === "genblaze" && (
+              <span className="badge accent">
+                {genblazeProvider === "gmi" ? "GMI Cloud" : genblazeProvider}
+              </span>
+            )}
             {apiVersion && <span>API {apiVersion}</span>}
           </div>
         </div>
@@ -555,6 +562,7 @@ export default function ProjectPage() {
         <GenblazePanel
           mediaMode={mediaMode}
           hasGenblazeAsset={hasGenblazeStoryboard(projectMedia)}
+          preferredProvider={genblazeProvider}
           provenance={manifest?.genblaze_provenance ?? null}
           plannerProvenance={manifest?.planner_provenance ?? null}
         />
@@ -601,7 +609,9 @@ export default function ProjectPage() {
                             <code>{role}</code>
                             <span className="meta">
                               {" "}
-                              · {asset.generator} · sha256:{" "}
+                              · {asset.generator}
+                              {asset.provider ? ` · ${asset.provider}` : ""}
+                              {asset.model ? ` (${asset.model})` : ""} · sha256:{" "}
                               <span title={asset.sha256}>
                                 {asset.sha256.slice(0, 12)}…
                               </span>

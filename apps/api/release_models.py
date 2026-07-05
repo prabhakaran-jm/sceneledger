@@ -37,6 +37,8 @@ class VerifiedAssetEntry(BaseModel):
     content_type: str
     generator: str
     playable: bool = True
+    provider: str | None = None  # "gmi" | "openai" for genblaze assets
+    model: str | None = None
 
 
 class ReleaseSceneAssets(BaseModel):
@@ -87,6 +89,7 @@ class PlannerProvenance(BaseModel):
     genblaze_manifest_verified: bool | None = None
     genblaze_run_id: str | None = None
     genblaze_model: str | None = None
+    genblaze_provider: str | None = None  # "gmi" | "openai"
     verification_errors: list[str] = Field(default_factory=list)
 
 

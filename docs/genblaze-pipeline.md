@@ -23,6 +23,37 @@ projects/{project_id}/media/{source_version}/{scene_id}/
 
 Each manifest includes `status: "complete"`, `media_mode`, and per-asset metadata (`sha256`, `content_type`, `generator`, `playable`).
 
+## Provider preference — GMI Cloud first, OpenAI fallback
+
+Every Genblaze step runs through a provider chain built from:
+
+```env
+SCENELEDGER_GENBLAZE_PROVIDER=gmi          # preferred: gmi | openai
+SCENELEDGER_GENBLAZE_FALLBACK_PROVIDER=openai
+GMI_API_KEY=                                # enables GMI attempts
+SCENELEDGER_GMI_CHAT_MODEL=deepseek-ai/DeepSeek-V3.2
+SCENELEDGER_GMI_IMAGE_MODEL=seedream-4-0-250828
+SCENELEDGER_GMI_TTS_MODEL=minimax-tts-speech-2.6-turbo
+SCENELEDGER_GMI_TTS_VOICE=            # optional; empty = model default voice
+```
+
+The preferred provider is tried first; on any failure (provider error,
+rejected structured output, failed validation) the fallback provider runs;
+planning then falls back to the deterministic planner with the full reason
+chain recorded. Storyboard failure of all providers is a clear media error;
+TTS failure of all providers degrades to labeled placeholder narration.
+Each asset and manifest records the provider (`gmi`/`openai`) and model
+that actually ran. Live-verified GMI models: `deepseek-ai/DeepSeek-V3.2`
+(chat, strict structured output), `seedream-4-0-250828` (image queue),
+`minimax-tts-speech-2.6-turbo` (TTS queue, via a custom registry that maps
+`prompt`→`text` — GMI's TTS payload contract). Known blockers: some GMI
+chat models (e.g. Qwen3-Next) reject `json_schema` response_format, and
+`elevenlabs-tts-v3` appears in the queue catalog but probes DEAD on the
+hackathon account — both simply fall through the chain. Remote asset URLs
+are scrubbed of signed-URL credentials before manifests are persisted
+(URLs are excluded from the SDK's canonical hash, so stored manifests
+still verify).
+
 ## Genblaze pipeline
 
 When configured, Genblaze mediates **three** generation steps:

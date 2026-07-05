@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from genblaze_providers import provider_chain
 from models import Scene, SourceChunk
 from scene_planner import plan_scenes
 
@@ -59,24 +60,16 @@ class PlannerResult:
     manifest_json: bytes | None = None
     run_id: str | None = None
     model: str | None = None
-
-
-def _chat_model() -> str:
-    return os.getenv("SCENELEDGER_GENBLAZE_CHAT_MODEL", "gpt-4o-mini").strip()
+    provider: str | None = None  # "gmi" | "openai" when planner ran
 
 
 def _planner_enabled() -> tuple[bool, str | None]:
-    """Genblaze planner runs only in genblaze mode with a key and SDK installed."""
+    """Genblaze planner runs only in genblaze mode with a configured provider."""
     mode = os.getenv("SCENELEDGER_MEDIA_MODE", "placeholder").strip().lower()
     if mode != "genblaze":
         return False, "media mode is placeholder"
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        return False, "OPENAI_API_KEY not set"
-    try:
-        import genblaze_core  # noqa: F401
-        import genblaze_openai  # noqa: F401
-    except ImportError:
-        return False, "genblaze packages not installed"
+    if not provider_chain("chat"):
+        return False, "no Genblaze provider configured (set GMI_API_KEY or OPENAI_API_KEY)"
     return True, None
 
 
@@ -132,6 +125,7 @@ def _validate_plan(
 
 def _build_planner_manifest(
     *,
+    provider: str,
     model: str,
     prompt: str,
     scenes: list[Scene],
@@ -162,7 +156,7 @@ def _build_planner_manifest(
     ).encode("utf-8")
 
     step = Step(
-        provider="openai-chat",
+        provider=provider,
         model=model,
         modality=Modality.TEXT,
         prompt=prompt,
@@ -207,59 +201,71 @@ def plan_scenes_with_planner(
         )
 
     from genblaze_core.exceptions import ProviderError
-    from genblaze_openai import chat
 
-    model = _chat_model()
     chunk_lines = "\n".join(
         f"{chunk.chunk_id}: {chunk.text.strip()}" for chunk in chunks
     )
     prompt = f"Source chunks:\n{chunk_lines}"
 
-    try:
-        response = chat(
-            model,
+    failure_chain: list[str] = []
+    for choice in provider_chain("chat"):
+        if choice.name == "gmi":
+            from genblaze_gmicloud import chat
+
+            step_provider = "gmicloud-chat"
+        else:
+            from genblaze_openai import chat
+
+            step_provider = "openai-chat"
+
+        try:
+            response = chat(
+                choice.model,
+                prompt=prompt,
+                system=_SYSTEM_PROMPT,
+                response_format=ScenePlanOutput,
+                temperature=0.3,
+                timeout=60.0,
+            )
+        except ProviderError as exc:
+            failure_chain.append(f"{choice.name} chat failed: {exc}")
+            continue
+
+        try:
+            output = ScenePlanOutput.model_validate(json.loads(response.text))
+        except (json.JSONDecodeError, ValidationError) as exc:
+            failure_chain.append(
+                f"{choice.name} output was not valid structured JSON: {type(exc).__name__}"
+            )
+            continue
+
+        scenes, invalid_reason = _validate_plan(output, chunks)
+        if scenes is None:
+            failure_chain.append(
+                f"{choice.name} output failed validation: {invalid_reason}"
+            )
+            continue
+
+        manifest_json, run_id = _build_planner_manifest(
+            provider=step_provider,
+            model=response.model or choice.model,
             prompt=prompt,
-            system=_SYSTEM_PROMPT,
-            response_format=ScenePlanOutput,
-            temperature=0.3,
-            timeout=60.0,
+            scenes=scenes,
+            plan_asset_url=plan_asset_url,
+            tokens_in=response.tokens_in,
+            tokens_out=response.tokens_out,
         )
-    except ProviderError as exc:
         return PlannerResult(
-            scenes=plan_scenes(chunks),
-            planner="deterministic",
-            fallback_reason=f"Genblaze chat failed: {exc}",
+            scenes=scenes,
+            planner="genblaze-chat",
+            manifest_json=manifest_json,
+            run_id=run_id,
+            model=response.model or choice.model,
+            provider=choice.name,
         )
 
-    try:
-        output = ScenePlanOutput.model_validate(json.loads(response.text))
-    except (json.JSONDecodeError, ValidationError) as exc:
-        return PlannerResult(
-            scenes=plan_scenes(chunks),
-            planner="deterministic",
-            fallback_reason=f"planner output was not valid structured JSON: {type(exc).__name__}",
-        )
-
-    scenes, invalid_reason = _validate_plan(output, chunks)
-    if scenes is None:
-        return PlannerResult(
-            scenes=plan_scenes(chunks),
-            planner="deterministic",
-            fallback_reason=f"planner output failed validation: {invalid_reason}",
-        )
-
-    manifest_json, run_id = _build_planner_manifest(
-        model=response.model or model,
-        prompt=prompt,
-        scenes=scenes,
-        plan_asset_url=plan_asset_url,
-        tokens_in=response.tokens_in,
-        tokens_out=response.tokens_out,
-    )
     return PlannerResult(
-        scenes=scenes,
-        planner="genblaze-chat",
-        manifest_json=manifest_json,
-        run_id=run_id,
-        model=response.model or model,
+        scenes=plan_scenes(chunks),
+        planner="deterministic",
+        fallback_reason="; ".join(failure_chain) or "no provider attempt succeeded",
     )

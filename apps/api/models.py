@@ -70,6 +70,7 @@ class PlanResponse(BaseModel):
     genblaze_planner_manifest_sha256: str | None = None
     genblaze_planner_run_id: str | None = None
     genblaze_planner_model: str | None = None
+    genblaze_planner_provider: str | None = None
 
 
 class CompareSourceRequest(BaseModel):
